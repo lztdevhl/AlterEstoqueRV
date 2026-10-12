@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, BarChart3, Boxes, Check,
@@ -617,7 +618,10 @@ function Modal({ title, subtitle, onClose, children }: { title: string; subtitle
     }
   }, [])
 
-  return <div className={`modal-backdrop ${closing ? 'is-closing' : ''}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><h2 id="modal-title">{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={requestClose} aria-label="Fechar"><X size={19} /></button></div>{children}</div></div>
+  return createPortal(
+    <div className={`modal-backdrop ${closing ? 'is-closing' : ''}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><h2 id="modal-title">{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={requestClose} aria-label="Fechar"><X size={19} /></button></div>{children}</div></div>,
+    document.body,
+  )
 }
 function Field({ label, required, wide, children }: { label: string; required?: boolean; wide?: boolean; children: React.ReactNode }) { return <label className={`field ${wide ? 'wide' : ''}`}><span>{label}{required && <b>*</b>}</span>{children}</label> }
 
