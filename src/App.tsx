@@ -409,6 +409,7 @@ function MovementsView({ products, customers, movements, customerFilter, onCusto
 }) {
   const [query, setQuery] = useState('')
   const [type, setType] = useState('todos')
+  const [selectedMovement, setSelectedMovement] = useState<{ movement: Movement; product?: Product; customer?: Customer } | null>(null)
   const filtered = movements.filter((movement) => {
     const product = products.find((item) => item.id === movement.productId)
     const customer = customers.find((item) => item.id === movement.customerId)
@@ -426,7 +427,21 @@ function MovementsView({ products, customers, movements, customerFilter, onCusto
       <div className="table-wrapper"><table><thead><tr><th>Movimentação</th><th>Produto</th><th>Cliente</th><th>Quantidade</th><th>Saldo anterior</th><th>Saldo posterior</th><th>Data e responsável</th><th>Motivo</th></tr></thead><tbody>{filtered.map((movement) => {
         const product = products.find((item) => item.id === movement.productId)
         const customer = customers.find((item) => item.id === movement.customerId)
-        return <tr key={movement.id}>
+        const openDetails = () => setSelectedMovement({ movement, product, customer })
+        return <tr
+          key={movement.id}
+          className="clickable-row"
+          role="button"
+          tabIndex={0}
+          aria-label={`Ver detalhes da movimentação de ${product?.name ?? 'produto'}`}
+          onClick={openDetails}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              openDetails()
+            }
+          }}
+        >
           <td><span className={`movement-type ${movement.type}`}><span /> {movement.isSale ? 'Venda' : movement.type === 'entrada' ? 'Entrada' : movement.type === 'saida' ? 'Saída' : 'Ajuste'}</span></td>
           <td><strong>{product?.name ?? 'Produto removido'}</strong><small className="table-subtext">{product?.sku}</small></td>
           <td>{customer?.name ?? (movement.isSale ? 'Cliente não encontrado' : '—')}</td>
@@ -437,7 +452,41 @@ function MovementsView({ products, customers, movements, customerFilter, onCusto
           <td>{movement.reason}</td>
         </tr>
       })}</tbody></table></div>}
+    {selectedMovement && <MovementDetailsModal {...selectedMovement} onClose={() => setSelectedMovement(null)} />}
   </section>
+}
+
+function MovementDetailsModal({ movement, product, customer, onClose }: {
+  movement: Movement
+  product?: Product
+  customer?: Customer
+  onClose: () => void
+}) {
+  const movementLabel = movement.isSale ? 'Venda' : movement.type === 'entrada' ? 'Entrada' : movement.type === 'saida' ? 'Saída' : 'Ajuste'
+  const signedQuantity = `${movement.type === 'saida' ? '−' : '+'}${quantityLabel(movement.quantity, product?.unit ?? 'un')}`
+
+  return <Modal title="Detalhes da movimentação" subtitle="Registro completo da operação no estoque." onClose={onClose}>
+    <div className="movement-detail">
+      <div className={`movement-detail-hero ${movement.type}`}>
+        <span className={`movement-type ${movement.type}`}><span /> {movementLabel}</span>
+        <strong>{signedQuantity}</strong>
+        <small>{formatDateTime(movement.date)}</small>
+      </div>
+      <div className="movement-detail-grid">
+        <div><span>Produto</span><strong>{product?.name ?? 'Produto removido'}</strong>{product?.sku && <small>SKU: {product.sku}</small>}</div>
+        <div><span>Cliente</span><strong>{movement.isSale ? (customer?.name ?? 'Cliente não encontrado') : 'Não se aplica'}</strong>{movement.isSale && customer?.document && <small>{customer.document}</small>}{movement.isSale && customer?.phone && <small>{customer.phone}</small>}</div>
+        <div><span>Saldo anterior</span><strong>{quantityLabel(movement.previousStock, product?.unit ?? 'un')}</strong></div>
+        <div><span>Saldo posterior</span><strong>{quantityLabel(movement.nextStock, product?.unit ?? 'un')}</strong></div>
+        <div><span>Responsável</span><strong>{movement.user}</strong></div>
+        <div><span>Data e hora</span><strong>{formatDateTime(movement.date)}</strong></div>
+        <div><span>Motivo</span><strong>{movement.reason || 'Não informado'}</strong></div>
+        <div><span>Destino / fornecedor</span><strong>{movement.destination || 'Não informado'}</strong></div>
+        <div><span>Documento de referência</span><strong>{movement.reference || 'Não informado'}</strong></div>
+        <div className="movement-detail-wide"><span>Observações</span><p>{movement.notes || 'Nenhuma observação registrada.'}</p></div>
+        <div className="movement-detail-wide"><span>ID do registro</span><code>{movement.id}</code></div>
+      </div>
+    </div>
+  </Modal>
 }
 
 function ReportsView({ products, customers, movements }: { products: Product[]; customers: Customer[]; movements: Movement[] }) {
