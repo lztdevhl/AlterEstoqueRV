@@ -130,6 +130,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .button.secondary:hover { border-color: #a8bda9; color: var(--forest); background: var(--surface-soft); }
 .button.ghost { color: var(--muted); background: transparent; }
 .button.ghost:hover { color: var(--forest); background: var(--surface-soft); }
+.button.danger-outline { border-color: #efc8c4; color: var(--danger); background: var(--danger-soft); }
+.button.danger-outline:hover { border-color: #e4aaa4; background: #fff0ee; }
 .text-button { display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; border: 0; color: var(--forest); background: transparent; font-size: 10px; font-weight: 700; }
 .text-button:hover { color: var(--forest-dark); }
 

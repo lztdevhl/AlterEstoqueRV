@@ -52,6 +52,12 @@ export async function saveSupabaseCustomer(input: CustomerForm, existing?: Custo
   return data.id
 }
 
+export async function deleteSupabaseCustomer(id: string) {
+  const client = requireSupabase()
+  const { error } = await client.from('clients').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function fetchSupabaseProducts() {
   const client = requireSupabase()
   const { data, error } = await client
@@ -216,6 +222,7 @@ function toMovement(row: Tables<'stock_movements'>): Movement {
     reference: row.reference ?? '',
     notes: row.notes ?? '',
     customerId: row.customer_id ?? '',
+    customerName: row.customer_name ?? '',
     isSale: row.is_sale,
   }
 }

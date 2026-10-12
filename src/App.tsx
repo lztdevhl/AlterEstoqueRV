@@ -4,12 +4,12 @@ import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, BarChart3, Boxes, Check,
   ClipboardList, Download, Edit3, Eye, EyeOff, Filter, LockKeyhole, Mail, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search,
-  ShieldCheck, SlidersHorizontal, Sprout, Truck, UsersRound, X, XCircle,
+  ShieldCheck, SlidersHorizontal, Sprout, Trash2, Truck, UsersRound, X, XCircle,
 } from 'lucide-react'
 import { InventoryError } from './lib/inventory'
 import { csvCell, formatDateTime, formatNumber, quantityLabel, stockByUnit } from './lib/format'
 import { isAllowedEmail, isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadSupabaseInventory, registerSupabaseMovement, saveSupabaseCustomer, saveSupabaseProduct } from './lib/supabaseRepository'
+import { deleteSupabaseCustomer, loadSupabaseInventory, registerSupabaseMovement, saveSupabaseCustomer, saveSupabaseProduct } from './lib/supabaseRepository'
 import { categories, units, type Customer, type CustomerForm, type Movement, type MovementForm, type Product, type ProductForm } from './lib/types'
 import dashboardMockup from '../references/1.png'
 
@@ -185,6 +185,19 @@ function App() {
     }
   }
 
+  const deleteCustomer = async (customer: Customer) => {
+    if (!window.confirm(`Excluir o cliente "${customer.name}"? As movimentações vinculadas continuarão no histórico.`)) return
+    try {
+      await deleteSupabaseCustomer(customer.id)
+      await loadData()
+      if (movementCustomerFilter === customer.id) setMovementCustomerFilter('')
+      setCustomerModal({ open: false })
+      showToast('success', 'Cliente excluído. O histórico de movimentações foi preservado.')
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Não foi possível excluir o cliente.')
+    }
+  }
+
   const resetData = async () => {
     if (!window.confirm('Recarregar os dados diretamente do Supabase?')) return
     await loadData()
@@ -215,7 +228,7 @@ function App() {
       </main>
     </div>
     {productModal.open && <ProductModal product={productModal.product} onClose={() => setProductModal({ open: false })} onSave={saveProduct} />}
-    {customerModal.open && <CustomerModal customer={customerModal.customer} onClose={() => { setCustomerModal({ open: false }); if (movementDraft) setMovementModal(true) }} onSave={saveCustomer} />}
+    {customerModal.open && <CustomerModal customer={customerModal.customer} onClose={() => { setCustomerModal({ open: false }); if (movementDraft) setMovementModal(true) }} onSave={saveCustomer} onDelete={deleteCustomer} />}
     {movementModal && <MovementModal products={products} customers={customers} initialForm={movementDraft} onClose={() => { setMovementModal(false); setMovementDraft(null) }} onSave={saveMovement} onCreateCustomer={(form) => { setMovementDraft(form); setMovementModal(false); setCustomerModal({ open: true }) }} />}
     {toast && <div className={`toast ${toast.kind}`}><span className="toast-icon">{toast.kind === 'success' ? <Check size={16} /> : <XCircle size={16} />}</span>{toast.message}<button onClick={() => setToast(null)} aria-label="Fechar aviso"><X size={15} /></button></div>}
   </div>
@@ -352,7 +365,7 @@ function ActivityRow({ movement, product, customer }: { movement: Movement; prod
   const isOut = movement.type === 'saida'
   return <div className="activity-row">
     <div className={`activity-icon ${isIn ? 'in' : isOut ? 'out' : 'adjust'}`}>{isIn ? <ArrowDownToLine size={17} /> : isOut ? <ArrowUpFromLine size={17} /> : <SlidersHorizontal size={17} />}</div>
-    <div className="activity-copy"><strong>{movement.isSale ? 'Venda' : isIn ? 'Entrada' : isOut ? 'Saída' : 'Ajuste'} <span>· {product?.name ?? 'Produto removido'}</span></strong><span>{movement.isSale ? `${customer?.name ?? 'Cliente não encontrado'} · ${movement.reason}` : movement.reason}</span></div>
+    <div className="activity-copy"><strong>{movement.isSale ? 'Venda' : isIn ? 'Entrada' : isOut ? 'Saída' : 'Ajuste'} <span>· {product?.name ?? 'Produto removido'}</span></strong><span>{movement.isSale ? `${customer?.name ?? movement.customerName ?? 'Cliente removido'} · ${movement.reason}` : movement.reason}</span></div>
     <div className="activity-value"><strong>{isOut ? '−' : '+'}{quantityLabel(movement.quantity, product?.unit ?? 'un')}</strong><span>{formatDateTime(movement.date)}</span></div>
   </div>
 }
@@ -414,7 +427,7 @@ function MovementsView({ products, customers, movements, customerFilter, onCusto
   const filtered = movements.filter((movement) => {
     const product = products.find((item) => item.id === movement.productId)
     const customer = customers.find((item) => item.id === movement.customerId)
-    const text = `${product?.name ?? ''} ${customer?.name ?? ''} ${movement.reason} ${movement.reference ?? ''}`.toLowerCase()
+    const text = `${product?.name ?? ''} ${customer?.name ?? movement.customerName ?? ''} ${movement.reason} ${movement.reference ?? ''}`.toLowerCase()
     return text.includes(query.toLowerCase()) && (type === 'todos' || movement.type === type) && (!customerFilter || movement.customerId === customerFilter)
   })
   return <section className="content-card page-card">
@@ -445,7 +458,7 @@ function MovementsView({ products, customers, movements, customerFilter, onCusto
         >
           <td><span className={`movement-type ${movement.type}`}><span /> {movement.isSale ? 'Venda' : movement.type === 'entrada' ? 'Entrada' : movement.type === 'saida' ? 'Saída' : 'Ajuste'}</span></td>
           <td><strong>{product?.name ?? 'Produto removido'}</strong><small className="table-subtext">{product?.sku}</small></td>
-          <td>{customer?.name ?? (movement.isSale ? 'Cliente não encontrado' : '—')}</td>
+          <td>{customer?.name ?? movement.customerName ?? (movement.isSale ? 'Cliente removido' : '—')}</td>
           <td><strong>{movement.type === 'saida' ? '−' : '+'}{quantityLabel(movement.quantity, product?.unit ?? 'un')}</strong></td>
           <td>{quantityLabel(movement.previousStock, product?.unit ?? 'un')}</td>
           <td>{quantityLabel(movement.nextStock, product?.unit ?? 'un')}</td>
@@ -475,7 +488,7 @@ function MovementDetailsModal({ movement, product, customer, onClose }: {
       </div>
       <div className="movement-detail-grid">
         <div><span>Produto</span><strong>{product?.name ?? 'Produto removido'}</strong>{product?.sku && <small>SKU: {product.sku}</small>}</div>
-        <div><span>Cliente</span><strong>{movement.isSale ? (customer?.name ?? 'Cliente não encontrado') : 'Não se aplica'}</strong>{movement.isSale && customer?.document && <small>{customer.document}</small>}{movement.isSale && customer?.phone && <small>{customer.phone}</small>}</div>
+        <div><span>Cliente</span><strong>{movement.isSale ? (customer?.name ?? movement.customerName ?? 'Cliente removido') : 'Não se aplica'}</strong>{movement.isSale && customer?.document && <small>{customer.document}</small>}{movement.isSale && customer?.phone && <small>{customer.phone}</small>}</div>
         <div><span>Saldo anterior</span><strong>{quantityLabel(movement.previousStock, product?.unit ?? 'un')}</strong></div>
         <div><span>Saldo posterior</span><strong>{quantityLabel(movement.nextStock, product?.unit ?? 'un')}</strong></div>
         <div><span>Responsável</span><strong>{movement.user}</strong></div>
@@ -493,7 +506,7 @@ function MovementDetailsModal({ movement, product, customer, onClose }: {
 function ReportsView({ products, customers, movements }: { products: Product[]; customers: Customer[]; movements: Movement[] }) {
   const [report, setReport] = useState<'saldo' | 'baixo' | 'movimentos'>('saldo')
   const rows = report === 'saldo' ? products : report === 'baixo' ? products.filter((product) => product.stockKnown !== false && product.quantity <= product.minStock) : movements
-  const exportCsv = () => { const header = report === 'movimentos' ? ['Tipo', 'Produto', 'Cliente', 'Quantidade', 'Saldo anterior', 'Saldo posterior', 'Data', 'Motivo'] : ['Produto', 'SKU', 'Categoria', 'Saldo', 'Unidade', 'Mínimo', 'Localização']; const body = report === 'movimentos' ? movements.map((item) => { const product = products.find((productItem) => productItem.id === item.productId); return [item.isSale ? 'Venda' : item.type, product?.name, customers.find((customer) => customer.id === item.customerId)?.name ?? '', item.quantity, item.previousStock, item.nextStock, item.date, item.reason].map(csvCell).join(';') }) : (rows as Product[]).map((item) => [item.name, item.sku, item.category, item.stockKnown === false ? '' : item.quantity, item.unit, item.stockKnown === false ? '' : item.minStock, item.location].map(csvCell).join(';')); const blob = new Blob([[header.map(csvCell).join(';'), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `relatorio-${report}-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url) }
+  const exportCsv = () => { const header = report === 'movimentos' ? ['Tipo', 'Produto', 'Cliente', 'Quantidade', 'Saldo anterior', 'Saldo posterior', 'Data', 'Motivo'] : ['Produto', 'SKU', 'Categoria', 'Saldo', 'Unidade', 'Mínimo', 'Localização']; const body = report === 'movimentos' ? movements.map((item) => { const product = products.find((productItem) => productItem.id === item.productId); return [item.isSale ? 'Venda' : item.type, product?.name, customers.find((customer) => customer.id === item.customerId)?.name ?? item.customerName ?? '', item.quantity, item.previousStock, item.nextStock, item.date, item.reason].map(csvCell).join(';') }) : (rows as Product[]).map((item) => [item.name, item.sku, item.category, item.stockKnown === false ? '' : item.quantity, item.unit, item.stockKnown === false ? '' : item.minStock, item.location].map(csvCell).join(';')); const blob = new Blob([[header.map(csvCell).join(';'), ...body].join('\n')], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `relatorio-${report}-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url) }
   return <div className="reports-layout"><section className="content-card report-selector"><p className="eyebrow">CENTRAL DE DADOS</p><h2>Escolha um relatório</h2><p className="muted">Consulte saldos e operações sem perder o contexto.</p><div className="report-options"><button className={report === 'saldo' ? 'selected' : ''} onClick={() => setReport('saldo')}><span className="report-icon green"><Boxes size={19} /></span><span><strong>Saldo atual</strong><small>Todos os produtos e localizações</small></span>{report === 'saldo' && <Check size={17} />}</button><button className={report === 'baixo' ? 'selected' : ''} onClick={() => setReport('baixo')}><span className="report-icon amber"><AlertTriangle size={19} /></span><span><strong>Abaixo do mínimo</strong><small>Itens que exigem reposição</small></span>{report === 'baixo' && <Check size={17} />}</button><button className={report === 'movimentos' ? 'selected' : ''} onClick={() => setReport('movimentos')}><span className="report-icon blue"><ClipboardList size={19} /></span><span><strong>Movimentações</strong><small>Histórico completo de operações</small></span>{report === 'movimentos' && <Check size={17} />}</button></div><button className="button secondary export-button" onClick={exportCsv}><Download size={16} /> Exportar CSV</button></section><section className="content-card report-preview"><div className="section-heading"><div><p className="eyebrow">PRÉVIA</p><h2>{report === 'saldo' ? 'Saldo atual' : report === 'baixo' ? 'Abaixo do mínimo' : 'Movimentações'}</h2></div><span className="report-count">{rows.length} registros</span></div>{rows.length === 0 ? <EmptyState compact title="Nenhum dado para exibir" description="Quando houver dados compatíveis, eles aparecerão nesta prévia." /> : report === 'movimentos' ? <div className="mini-report-list">{(rows as Movement[]).slice(0, 7).map((movement) => <ActivityRow key={movement.id} movement={movement} product={products.find((item) => item.id === movement.productId)} customer={customers.find((item) => item.id === movement.customerId)} />)}</div> : <div className="mini-report-list">{(rows as Product[]).slice(0, 7).map((product) => <div className="report-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.location || 'Localização não informada'}</span></div><strong className={product.stockKnown !== false && product.quantity <= product.minStock ? 'text-warning' : ''}>{product.stockKnown === false ? 'Não informado' : quantityLabel(product.quantity, product.unit)}</strong></div>)}</div>}</section></div>
 }
 
@@ -505,10 +518,11 @@ function ProductModal({ product, onClose, onSave }: { product?: Product; onClose
   return <Modal title={product ? 'Editar produto' : 'Novo produto'} subtitle="Cadastre as informações usadas na operação." onClose={onClose}><form onSubmit={(event) => { event.preventDefault(); onSave(form, product) }}><div className="form-grid"><Field label="Nome do produto" required><input autoFocus value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Ex.: Protecocho 200" /></Field><Field label="SKU / código interno"><input value={form.sku} onChange={(event) => update('sku', event.target.value)} placeholder="Não informado" /></Field><Field label="Categoria"><select value={form.category} onChange={(event) => update('category', event.target.value)}>{categories.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Unidade de medida"><select value={form.unit} onChange={(event) => update('unit', event.target.value)}><option value="">Não informado</option>{units.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Saldo inicial"><input type="number" min="0" step="0.01" value={form.quantity} onChange={(event) => update('quantity', event.target.value)} /></Field><Field label="Estoque mínimo"><input type="number" min="0" step="0.01" value={form.minStock} onChange={(event) => update('minStock', event.target.value)} /></Field><Field label="Localização no depósito"><input value={form.location} onChange={(event) => update('location', event.target.value)} placeholder="Não informado" /></Field><Field label="Status"><label className="switch-field"><input type="checkbox" checked={form.active} onChange={(event) => update('active', event.target.checked)} /><span className="switch" /> Produto ativo</label></Field><Field label="Descrição" wide><textarea rows={3} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Descrição oficial do produto..." /></Field></div><div className="modal-footer"><span className="form-note"><ShieldCheck size={14} /> Sem SKU oficial preenchido</span><div><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button type="submit" className="button primary">{product ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></div></form></Modal>
 }
 
-function CustomerModal({ customer, onClose, onSave }: {
+function CustomerModal({ customer, onClose, onSave, onDelete }: {
   customer?: Customer
   onClose: () => void
   onSave: (form: CustomerForm, existing?: Customer) => Promise<boolean>
+  onDelete?: (customer: Customer) => Promise<void>
 }) {
   const [form, setForm] = useState<CustomerForm>(customer ? {
     name: customer.name, document: customer.document, phone: customer.phone,
@@ -532,7 +546,7 @@ function CustomerModal({ customer, onClose, onSave }: {
         <Field label="Status"><label className="switch-field"><input type="checkbox" checked={form.active} onChange={(event) => update('active', event.target.checked)} /><span className="switch" /> Cliente ativo</label></Field>
         <Field label="Observações" wide><textarea rows={3} value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Informações úteis sobre o cliente" /></Field>
       </div>
-      <div className="modal-footer"><span className="form-note"><ShieldCheck size={14} /> Os dados são salvos no Supabase</span><div><button type="button" className="button ghost" onClick={onClose} disabled={saving}>Cancelar</button><button type="submit" className="button primary" disabled={saving}>{saving ? 'Salvando...' : customer ? 'Salvar alterações' : 'Cadastrar cliente'}</button></div></div>
+      <div className="modal-footer"><span className="form-note"><ShieldCheck size={14} /> Os dados são salvos no Supabase</span><div>{customer && onDelete && <button type="button" className="button danger-outline" onClick={() => void onDelete(customer)} disabled={saving}><Trash2 size={15} /> Excluir cliente</button>}<button type="button" className="button ghost" onClick={onClose} disabled={saving}>Cancelar</button><button type="submit" className="button primary" disabled={saving}>{saving ? 'Salvando...' : customer ? 'Salvar alterações' : 'Cadastrar cliente'}</button></div></div>
     </form>
   </Modal>
 }

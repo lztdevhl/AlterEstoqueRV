@@ -153,6 +153,7 @@ export type Database = {
           idempotency_key: string
           created_at: string
           customer_id: string | null
+          customer_name: string | null
           is_sale: boolean
         }
         Insert: {
@@ -170,6 +171,7 @@ export type Database = {
           idempotency_key?: string
           created_at?: string
           customer_id?: string | null
+          customer_name?: string | null
           is_sale?: boolean
         }
         Update: {
@@ -187,6 +189,7 @@ export type Database = {
           idempotency_key?: string
           created_at?: string
           customer_id?: string | null
+          customer_name?: string | null
           is_sale?: boolean
         }
         Relationships: [

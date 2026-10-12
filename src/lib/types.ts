@@ -55,6 +55,7 @@ export interface Movement {
   reference?: string
   notes?: string
   customerId?: string
+  customerName?: string
   isSale?: boolean
 }
 
