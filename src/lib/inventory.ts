@@ -47,6 +47,8 @@ export const applyMovement = (
     destination: form.destination.trim(),
     reference: form.reference.trim(),
     notes: form.notes.trim(),
+    customerId: form.type === 'saida' && form.isSale ? form.customerId : '',
+    isSale: form.type === 'saida' && form.isSale,
   }
   return { products: updatedProducts, movements: [movement, ...movements] }
 }

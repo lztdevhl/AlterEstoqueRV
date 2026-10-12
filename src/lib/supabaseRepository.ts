@@ -1,4 +1,4 @@
-import type { Movement, MovementForm, Product, ProductForm } from './types'
+import type { Customer, CustomerForm, Movement, MovementForm, Product, ProductForm } from './types'
 import { requireSupabase } from './supabase'
 import { categories, type Category } from './types'
 import type { Tables } from './supabase.types'
@@ -12,23 +12,44 @@ export type SupabaseProductInput = Omit<Pick<
   stockKnown: boolean
 }
 
-export async function loadSupabaseInventory(): Promise<{ products: Product[]; movements: Movement[] }> {
+export async function loadSupabaseInventory(): Promise<{ products: Product[]; movements: Movement[]; customers: Customer[] }> {
   const client = requireSupabase()
-  const [{ data: productRows, error: productsError }, { data: movementRows, error: movementsError }] = await Promise.all([
+  const [{ data: productRows, error: productsError }, { data: movementRows, error: movementsError }, { data: customerRows, error: customersError }] = await Promise.all([
     client
       .from('products')
       .select('*, stock_balances(quantity, updated_at)')
       .order('name', { ascending: true }),
     client.from('stock_movements').select('*').order('created_at', { ascending: false }),
+    client.from('clients').select('*').order('name', { ascending: true }),
   ])
 
   if (productsError) throw productsError
   if (movementsError) throw movementsError
+  if (customersError) throw customersError
 
   return {
     products: (productRows ?? []).map(toProduct),
     movements: (movementRows ?? []).map(toMovement),
+    customers: (customerRows ?? []).map(toCustomer),
   }
+}
+
+export async function saveSupabaseCustomer(input: CustomerForm, existing?: Customer) {
+  const client = requireSupabase()
+  const payload = {
+    name: input.name.trim(),
+    document: input.document.trim() || null,
+    phone: input.phone.trim() || null,
+    email: input.email.trim() || null,
+    notes: input.notes.trim() || null,
+    active: input.active,
+  }
+  const query = existing
+    ? client.from('clients').update(payload).eq('id', existing.id)
+    : client.from('clients').insert(payload)
+  const { data, error } = await query.select('id').single()
+  if (error) throw error
+  return data.id
 }
 
 export async function fetchSupabaseProducts() {
@@ -71,6 +92,8 @@ export async function saveSupabaseProduct(input: SupabaseProductInput, existing?
       destination: '',
       reference: '',
       notes: '',
+      customerId: '',
+      isSale: false,
     })
   } else if (productId && input.stockKnown && !existing?.stockKnown) {
     const { error } = await client.from('products').update({ stock_known: true }).eq('id', productId)
@@ -107,7 +130,7 @@ export async function updateSupabaseProduct(id: string, input: SupabaseProductIn
 
 export async function registerSupabaseMovement(input: MovementForm, idempotencyKey = crypto.randomUUID()) {
   const client = requireSupabase()
-  const { data, error } = await client.rpc('register_stock_movement', {
+  const { data, error } = await client.rpc('register_stock_movement_with_customer', {
     p_product_id: input.productId,
     p_movement_type: input.type,
     p_quantity: Number(input.quantity),
@@ -116,6 +139,8 @@ export async function registerSupabaseMovement(input: MovementForm, idempotencyK
     p_reference: input.reference.trim() || null,
     p_notes: input.notes.trim() || null,
     p_idempotency_key: idempotencyKey,
+    p_is_sale: input.type === 'saida' && input.isSale,
+    p_customer_id: input.type === 'saida' && input.isSale ? input.customerId || null : null,
   })
 
   if (error) throw new Error(toMovementErrorMessage(error.message))
@@ -132,6 +157,8 @@ function toMovementErrorMessage(message: string) {
   if (normalized.includes('adjustment_does_not_change_stock')) return 'O ajuste precisa alterar o saldo atual.'
   if (normalized.includes('reason_is_required')) return 'Informe o motivo da movimentação.'
   if (normalized.includes('product_not_found_or_inactive')) return 'O produto selecionado está inativo ou não existe mais.'
+  if (normalized.includes('customer_is_required')) return 'Selecione o cliente para registrar a venda.'
+  if (normalized.includes('customer_not_found_or_inactive')) return 'O cliente selecionado está inativo ou não existe mais.'
   return 'Não foi possível registrar a movimentação no Supabase.'
 }
 
@@ -188,6 +215,22 @@ function toMovement(row: Tables<'stock_movements'>): Movement {
     destination: row.destination ?? '',
     reference: row.reference ?? '',
     notes: row.notes ?? '',
+    customerId: row.customer_id ?? '',
+    isSale: row.is_sale,
+  }
+}
+
+function toCustomer(row: Tables<'clients'>): Customer {
+  return {
+    id: row.id,
+    name: row.name,
+    document: row.document ?? '',
+    phone: row.phone ?? '',
+    email: row.email ?? '',
+    notes: row.notes ?? '',
+    active: row.active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }
 

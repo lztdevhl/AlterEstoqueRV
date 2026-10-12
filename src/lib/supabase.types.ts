@@ -6,6 +6,42 @@ export type ProfileRole = 'admin' | 'operador' | 'leitura'
 export type Database = {
   public: {
     Tables: {
+      clients: {
+        Row: {
+          id: string
+          name: string
+          document: string | null
+          phone: string | null
+          email: string | null
+          notes: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          document?: string | null
+          phone?: string | null
+          email?: string | null
+          notes?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          document?: string | null
+          phone?: string | null
+          email?: string | null
+          notes?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           id: string
@@ -116,6 +152,8 @@ export type Database = {
           performed_by: string | null
           idempotency_key: string
           created_at: string
+          customer_id: string | null
+          is_sale: boolean
         }
         Insert: {
           id?: string
@@ -131,6 +169,8 @@ export type Database = {
           performed_by?: string | null
           idempotency_key?: string
           created_at?: string
+          customer_id?: string | null
+          is_sale?: boolean
         }
         Update: {
           id?: string
@@ -146,6 +186,8 @@ export type Database = {
           performed_by?: string | null
           idempotency_key?: string
           created_at?: string
+          customer_id?: string | null
+          is_sale?: boolean
         }
         Relationships: [
           {
@@ -155,6 +197,13 @@ export type Database = {
             referencedRelation: 'products'
             referencedColumns: ['id']
           },
+          {
+            foreignKeyName: 'stock_movements_customer_id_fkey'
+            columns: ['customer_id']
+            isOneToOne: false
+            referencedRelation: 'clients'
+            referencedColumns: ['id']
+          },
         ]
       }
     }
@@ -162,6 +211,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      register_stock_movement_with_customer: {
+        Args: {
+          p_product_id: string
+          p_movement_type: MovementType
+          p_quantity: number
+          p_reason: string
+          p_destination?: string | null
+          p_reference?: string | null
+          p_notes?: string | null
+          p_idempotency_key?: string | null
+          p_is_sale?: boolean
+          p_customer_id?: string | null
+        }
+        Returns: {
+          movement_id: string
+          product_id: string
+          movement_type: MovementType
+          quantity: number
+          previous_quantity: number
+          next_quantity: number
+          created_at: string
+        }[]
+      }
       register_stock_movement: {
         Args: {
           p_product_id: string

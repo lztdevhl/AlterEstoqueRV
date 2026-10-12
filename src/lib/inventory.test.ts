@@ -7,7 +7,7 @@ const product: Product = {
   quantity: 10, minStock: 2, stockKnown: true, location: 'A-01', active: true, createdAt: '', updatedAt: '',
 }
 const form = (overrides: Partial<MovementForm>): MovementForm => ({
-  type: 'entrada', productId: 'p1', quantity: '5', reason: 'Conferência', destination: '', reference: '', notes: '', ...overrides,
+  type: 'entrada', productId: 'p1', quantity: '5', reason: 'Conferência', destination: '', reference: '', notes: '', customerId: '', isSale: false, ...overrides,
 })
 
 describe('regras de estoque', () => {

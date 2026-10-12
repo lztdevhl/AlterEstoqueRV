@@ -29,6 +29,9 @@ As migrations estão em `supabase/migrations` e criam:
 - RLS para usuários autenticados;
 - função transacional para entrada, saída e ajuste;
 - proteção contra chamadas duplicadas por chave de idempotência.
+- cadastro de clientes e vínculo obrigatório do cliente com cada saída marcada como venda.
+
+Na aba **Clientes**, cadastre nome e, se desejar, CPF/CNPJ, telefone, e-mail e observações. Ao registrar uma saída, escolha **Venda para cliente** e selecione o cliente. As vendas aparecem no histórico, podem ser filtradas por cliente e constam no CSV de movimentações. Saídas antigas permanecem no histórico sem cliente vinculado.
 
 Para aplicar no projeto remoto:
 

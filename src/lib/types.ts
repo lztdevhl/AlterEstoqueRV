@@ -4,6 +4,27 @@ export const units = ['un', 'kg', 'm', 'L'] as const
 export type Unit = (typeof units)[number] | ''
 export type MovementType = 'entrada' | 'saida' | 'ajuste'
 
+export interface Customer {
+  id: string
+  name: string
+  document: string
+  phone: string
+  email: string
+  notes: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerForm {
+  name: string
+  document: string
+  phone: string
+  email: string
+  notes: string
+  active: boolean
+}
+
 export interface Product {
   id: string
   name: string
@@ -33,6 +54,8 @@ export interface Movement {
   destination?: string
   reference?: string
   notes?: string
+  customerId?: string
+  isSale?: boolean
 }
 
 export interface ProductForm {
@@ -55,4 +78,6 @@ export interface MovementForm {
   destination: string
   reference: string
   notes: string
+  customerId: string
+  isSale: boolean
 }
