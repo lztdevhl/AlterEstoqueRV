@@ -71,6 +71,7 @@ export type Database = {
           id: string
           name: string
           sku: string | null
+          image_url: string | null
           category: string | null
           description: string | null
           unit: string | null
@@ -85,6 +86,7 @@ export type Database = {
           id?: string
           name: string
           sku?: string | null
+          image_url?: string | null
           category?: string | null
           description?: string | null
           unit?: string | null
@@ -99,6 +101,7 @@ export type Database = {
           id?: string
           name?: string
           sku?: string | null
+          image_url?: string | null
           category?: string | null
           description?: string | null
           unit?: string | null

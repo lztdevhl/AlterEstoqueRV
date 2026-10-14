@@ -5,7 +5,7 @@ import type { Tables } from './supabase.types'
 
 export type SupabaseProductInput = Omit<Pick<
   ProductForm,
-  'name' | 'sku' | 'category' | 'description' | 'unit' | 'minStock' | 'location' | 'active'
+  'name' | 'sku' | 'imageUrl' | 'category' | 'description' | 'unit' | 'minStock' | 'location' | 'active'
 >, 'minStock'> & {
   quantity: number
   minStock: number
@@ -174,6 +174,7 @@ function toSupabaseProduct(input: SupabaseProductInput) {
   return {
     name: input.name.trim(),
     sku: input.sku.trim() || null,
+    image_url: input.imageUrl.trim() || null,
     category: input.category,
     description: input.description.trim() || null,
     unit: input.unit || null,
@@ -194,6 +195,7 @@ function toProduct(row: ProductRow): Product {
     id: row.id,
     name: row.name,
     sku: row.sku ?? '',
+    imageUrl: row.image_url ?? '',
     category: toCategory(row.category),
     description: row.description ?? '',
     unit: row.unit === 'un' || row.unit === 'kg' || row.unit === 'm' || row.unit === 'L' ? row.unit : '',

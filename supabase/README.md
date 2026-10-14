@@ -19,7 +19,8 @@ O frontend usa somente a chave pública/publishable ou anon. Nunca coloque `serv
 - `20261012010000_add_stock_known_and_fix_movements.sql`: controle de saldo informado e ajuste transacional completo.
 - `20261012020000_seed_catalog.sql`: catálogo oficial sem preços, SKUs, localizações ou saldos.
 - `20261012030000_restrict_to_single_admin.sql`: acesso restrito ao primeiro administrador e bloqueio de outros usuários no RLS.
-- `20261012040000_replace_catalog_with_pdf_products.sql`: remove o catálogo e o histórico antigos e insere somente os 20 produtos do PDF.
+- `20261012040000_replace_catalog_with_pdf_products.sql`: remove o catálogo e o histórico antigos e insere somente os produtos do PDF.
+- `20261014100000_import_lunet_catalog.sql`: substitui o catálogo pelos 53 produtos da planilha em `ex`, preservando códigos, descrições e 38 fotos incorporadas.
 
 Movimentações são gravadas pela função `register_stock_movement`, com validação no banco, atualização atômica do saldo e chave de idempotência.
 

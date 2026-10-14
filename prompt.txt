@@ -1,90 +1,156 @@
-# Redesign da página de login — Alternativa Estoque
+# Redesign Premium — Alternativa Estoque
 
-Quero redesenhar exclusivamente a página de login do meu sistema **Alternativa Estoque**, utilizando como referência visual e de experiência do usuário a página:
+Atue como um Senior Product Designer e Senior Frontend Engineer especializado em interfaces SaaS premium, com referências visuais da Stripe, Linear e Vercel.
 
-https://app.abacatepay.com/login?returnTo=%2F
+Quero elevar a qualidade visual do meu sistema **Alternativa Estoque**, mantendo a identidade visual da marca e todas as funcionalidades existentes.
 
-## Objetivo
+## 1. Objetivo
 
-Criar uma tela de login moderna, minimalista, elegante e profissional, inspirada na simplicidade visual da AbacatePay e no acabamento de interfaces SaaS como Stripe e Linear.
+Transformar a interface atual em um produto SaaS moderno, elegante, consistente, intuitivo e profissional, com excelente hierarquia visual, tipografia refinada, espaçamento equilibrado e microinterações suaves.
 
-### 1. Analise a referência
+Não quero apenas trocar cores ou arredondar cards. Quero uma evolução real da experiência visual e de uso.
 
-Acesse a página de referência e, se possível, examine sua aparência visual, hierarquia, espaçamentos, tipografia, campos de formulário, botões e comportamento responsivo.
+## 2. Direção visual
 
-Não se limite à descrição textual da página. Analise o layout real quando houver acesso visual disponível. Se não conseguir visualizar a página diretamente, não invente detalhes: utilize as características conhecidas de uma interface minimalista como direção de design.
+- Use a Stripe como referência para acabamento visual, organização, formulários e superfícies.
+- Use a Linear como referência para navegação, densidade visual, hierarquia e interações.
+- Use a Vercel como referência para simplicidade, tipografia e clareza dos dados.
+- Preserve a identidade da Alternativa Estoque, principalmente o verde-escuro institucional.
+- Utilize fundos neutros, superfícies brancas, bordas sutis e sombras discretas.
+- Utilize verde-lima apenas como cor de destaque, sem exageros.
+- Reserve vermelho, amarelo e verde para estados operacionais, alertas e feedbacks.
 
-### 2. Direção visual
+Paleta de referência:
+- Verde institucional: #0D2B20
+- Fundo principal: #F6F8F5
+- Superfícies: #FFFFFF
+- Verde de destaque: #A3D635
+- Texto principal: #18251F
+- Texto secundário: #718078
+- Bordas: #E2E9E3
 
-* Layout limpo, com bastante espaço em branco e hierarquia visual clara.
-* Formulário de autenticação com posicionamento equilibrado e dimensões bem definidas.
-* Tipografia moderna, legível e consistente.
-* Campos de entrada refinados, com bordas discretas e estados de foco elegantes.
-* Botão principal destacado, com feedback visual ao passar o mouse, pressionar e carregar.
-* Cantos arredondados moderados e sombras sutis, evitando excesso de elementos decorativos.
-* Identidade visual própria da Alternativa Estoque, preservando seu logotipo e suas cores institucionais.
-* Acabamento visual premium, sem imitar literalmente a marca AbacatePay.
+Adapte os tokens à estrutura de estilos já existente no projeto.
 
-### 3. Estrutura da tela
+## 3. Dashboard — Visão geral
 
-Crie uma experiência de login que contenha, conforme compatível com a autenticação atual:
+Redesenhe o dashboard para apresentar as informações de maneira mais estratégica.
 
-* Logotipo da Alternativa.
-* Título objetivo, como "Bem-vindo de volta".
-* Texto auxiliar curto explicando o acesso ao sistema.
-* Campo de e-mail ou usuário, conforme o método já implementado.
-* Campo de senha, caso utilizado atualmente, com opção de mostrar ou ocultar a senha.
-* Botão principal para entrar.
-* Link para recuperação de senha, se já existir essa funcionalidade.
-* Mensagens de erro e validação claras.
-* Indicador de carregamento durante a autenticação.
-* Identificação discreta do sistema Alternativa Estoque.
+- Melhore a hierarquia entre título, descrição e ações principais.
+- Refine os cards de produtos cadastrados, itens em estoque, estoque baixo e produtos sem estoque.
+- Dê destaque aos números sem exagerar no tamanho dos cards.
+- Utilize ícones consistentes, com fundos discretos e cores semanticamente corretas.
+- Faça com que indicadores clicáveis levem à respectiva visualização filtrada, caso essa funcionalidade seja compatível com a arquitetura existente.
+- Melhore a seção de ações rápidas, eliminando espaços vazios desnecessários.
+- Aprimore a lista de movimentações recentes, alinhando produto, tipo, quantidade, descrição e data.
+- Desenvolva uma seção de monitoramento que facilite identificar produtos abaixo do estoque mínimo.
+- Preserve a integridade dos cálculos e utilize apenas dados reais do sistema.
 
-Não implemente autenticação por código enviado por e-mail, Google OAuth ou qualquer método novo apenas porque a referência utiliza esse fluxo. Preserve o método de autenticação real do projeto.
+O dashboard deve responder rapidamente a três perguntas:
+1. Como está meu estoque?
+2. Quais produtos exigem atenção?
+3. Quais foram as últimas movimentações?
 
-### 4. Microinterações e animações
+## 4. Sidebar e navegação
 
-Adicione animações discretas e fluidas:
+Refine a barra lateral mantendo a identidade visual da Alternativa.
 
-* Entrada inicial do formulário com fade-in e deslocamento vertical mínimo.
-* Foco dos campos com transição suave de borda e destaque visual.
-* Botão com hover e feedback de clique rápidos.
-* Transição suave entre os estados de carregamento, sucesso e erro.
-* Mensagens de validação que apareçam sem provocar saltos excessivos no layout.
-* Respeito à preferência `prefers-reduced-motion`.
+- Melhore o alinhamento da marca, dos ícones e dos textos.
+- Padronize os espaçamentos entre itens.
+- Crie estados de hover, foco, ativo e desativado consistentes.
+- Utilize um indicador discreto para a rota ativa.
+- Aprimore a aparência dos contadores.
+- Implemente uma transição suave ao expandir ou recolher a sidebar.
+- Evite deslocamentos bruscos do conteúdo principal.
+- Preserve a navegação e as rotas atuais.
 
-As animações devem transmitir qualidade, não atrasar o login.
+## 5. Design system
 
-### 5. Responsividade
+Crie ou refine um design system reutilizável.
 
-A página deve funcionar perfeitamente em desktop, tablet e celular.
+Padronize:
+- Tipografia e escala de tamanhos.
+- Pesos tipográficos e alturas de linha.
+- Espaçamentos.
+- Bordas, raios e sombras.
+- Cores semânticas.
+- Botões primários, secundários, terciários e destrutivos.
+- Inputs, selects, campos de busca e filtros.
+- Cards, tabelas, badges e tooltips.
+- Modais, dropdowns, menus e notificações.
+- Estados de carregamento, vazio, erro e sucesso.
 
-Em telas pequenas, mantenha margens confortáveis, campos fáceis de preencher e um botão principal com área de toque adequada. Evite rolagem desnecessária e garanta compatibilidade com o teclado virtual.
+Evite criar estilos diferentes para componentes que deveriam seguir o mesmo padrão.
 
-### 6. Requisitos técnicos
+## 6. Microinterações e animações
 
-Antes de implementar:
+Implemente animações refinadas e funcionais:
 
-* Identifique o componente e a rota atuais de login.
-* Verifique os estilos e componentes reutilizáveis do projeto.
-* Preserve a integração com o backend, a autenticação, as sessões, as permissões e os redirecionamentos.
-* Reutilize os componentes e as dependências existentes sempre que possível.
+- Sidebar expandindo e recolhendo suavemente.
+- Modais abrindo e fechando com transições sutis de opacidade e escala.
+- Dropdowns e menus com entradas suaves.
+- Cards e linhas interativas com hover discreto.
+- Botões com feedback visual ao pressionar.
+- Skeletons durante carregamentos.
+- Toasts para feedback de ações.
+- Transições suaves em filtros e atualizações de conteúdo, quando apropriado.
 
-Implemente o redesign diretamente nos arquivos corretos. Não crie uma página de demonstração desconectada do sistema real.
+Utilize preferencialmente as ferramentas de animação que já existem no projeto. Se necessário, utilize CSS transitions ou a biblioteca já instalada.
 
-### 7. Escopo
+As animações devem ser rápidas, naturais e discretas, geralmente entre 150 ms e 250 ms. Respeite prefers-reduced-motion.
 
-Modifique somente a experiência visual e as interações da página de login e os componentes estritamente necessários para isso.
+Não anime elementos sem necessidade e não introduza atrasos artificiais em ações importantes.
 
-Não altere o dashboard, a sidebar, as telas de estoque ou outras páginas nesta tarefa.
+## 7. Todas as páginas
 
-### 8. Validação final
+Aplique a mesma linguagem visual a todo o sistema:
+- Visão geral.
+- Produtos.
+- Clientes.
+- Movimentações.
+- Relatórios.
 
-* Teste o login real.
-* Verifique os estados de erro, carregamento e recuperação de senha, quando aplicáveis.
-* Confirme que os redirecionamentos continuam funcionando.
-* Verifique a responsividade.
-* Execute os testes e o build disponíveis.
-* Corrija regressões antes de concluir.
+Não redesenhe apenas o dashboard. As demais páginas devem compartilhar os mesmos componentes, padrões de navegação e estados visuais.
 
-**Resultado esperado:** uma página de login com a simplicidade e a elegância da referência, identidade própria da Alternativa Estoque, animações suaves e funcionamento integral com a autenticação existente.
+Nas páginas de produtos e movimentações, priorize tabelas legíveis, pesquisa eficiente, filtros claros, ações acessíveis e formulários bem organizados.
+
+## 8. Responsividade e acessibilidade
+
+- Garanta funcionamento em desktop, tablet e dispositivos móveis.
+- Evite overflow horizontal desnecessário.
+- Mantenha contraste adequado.
+- Utilize foco visível para navegação por teclado.
+- Preserve labels e atributos de acessibilidade.
+- Garanta que ícones e botões tenham identificação acessível.
+- Respeite a preferência por movimento reduzido.
+
+## 9. Restrições importantes
+
+- Antes de alterar o código, inspecione a estrutura, as tecnologias e os componentes existentes.
+- Não recrie o projeto do zero.
+- Não altere regras de negócio, banco de dados, autenticação, permissões ou cálculos de estoque.
+- Não remova funcionalidades existentes.
+- Não substitua dados reais por mocks.
+- Não crie botões decorativos que não executem nenhuma ação.
+- Não adicione dependências desnecessárias.
+- Não reescreva componentes inteiros quando uma melhoria localizada for suficiente.
+- Preserve compatibilidade com a arquitetura atual.
+- Reutilize os componentes existentes sempre que fizer sentido.
+
+## 10. Execução
+
+Primeiro, analise o projeto e identifique os principais pontos que precisam de melhorias.
+
+Depois, implemente as alterações diretamente no código, começando pelo design system e pelo layout principal.
+
+Em seguida, aplique o padrão visual às páginas restantes e refine as microinterações.
+
+Ao finalizar:
+- Execute as verificações e testes disponíveis.
+- Corrija erros de lint, tipagem ou build introduzidos pelas mudanças.
+- Verifique os estados de carregamento, vazio, erro e sucesso.
+- Confira o comportamento da sidebar e dos modais.
+- Confirme que as funcionalidades anteriores continuam funcionando.
+
+Trabalhe com autonomia, tomando decisões de design consistentes sem interromper a implementação para pedir aprovação a cada detalhe.
+
+**Resultado esperado:** um sistema de estoque com acabamento visual de SaaS premium, identidade própria da Alternativa, excelente usabilidade e interações suaves, sem comprometer a estabilidade do produto.

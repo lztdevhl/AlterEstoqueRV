@@ -29,6 +29,7 @@ export interface Product {
   id: string
   name: string
   sku: string
+  imageUrl: string
   category: Category
   description: string
   unit: Unit
@@ -62,6 +63,7 @@ export interface Movement {
 export interface ProductForm {
   name: string
   sku: string
+  imageUrl: string
   category: Category
   description: string
   unit: Unit

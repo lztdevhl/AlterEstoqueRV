@@ -6,7 +6,7 @@ Sistema de controle de estoque da Alternativa Plásticos, construído em React +
 
 O aplicativo usa Supabase como fonte única de dados. Produtos, saldos, movimentações e usuários não são mais persistidos em `localStorage`.
 
-O catálogo atual é reconstruído pela migration a partir dos 20 produtos encontrados exclusivamente no PDF em `tabela`. Nenhum preço, SKU, localização ou saldo é criado. A limpeza do catálogo também remove o histórico antigo de movimentações.
+O catálogo atual é reconstruído pela migration a partir dos 53 produtos da planilha `ex/catalogo_lunet_completo.xlsx`. Os códigos da planilha são mantidos como SKU, as descrições são importadas quando existem e as 38 fotos incorporadas ficam disponíveis na aba Produtos. A limpeza do catálogo também remove o histórico antigo de movimentações.
 
 ## Executar
 

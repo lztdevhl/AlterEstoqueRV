@@ -3,7 +3,7 @@ import { applyMovement, InventoryError } from './inventory'
 import type { MovementForm, Product } from './types'
 
 const product: Product = {
-  id: 'p1', name: 'Produto', sku: 'SKU-1', category: 'Protecocho', description: '', unit: 'un',
+  id: 'p1', name: 'Produto', sku: 'SKU-1', imageUrl: '', category: 'Protecocho', description: '', unit: 'un',
   quantity: 10, minStock: 2, stockKnown: true, location: 'A-01', active: true, createdAt: '', updatedAt: '',
 }
 const form = (overrides: Partial<MovementForm>): MovementForm => ({
