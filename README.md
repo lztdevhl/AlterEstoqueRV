@@ -43,6 +43,24 @@ npx supabase db push
 
 Consulte [supabase/README.md](supabase/README.md) para detalhes.
 
+## Importação inteligente de relatórios
+
+A aba **Importar relatórios** aceita CSV e Excel (`.xlsx`). O fluxo é: selecionar/arrastar o arquivo, informar o período opcional, revisar a prévia, corrigir produtos ou tipos pendentes, salvar a prévia e confirmar o lote. O upload e o processamento da prévia não alteram o estoque.
+
+O parser detecta cabeçalhos por aliases, valida data/quantidade, identifica produtos por SKU, código alternativo salvo, nome normalizado e apenas sugere correspondências aproximadas. As regras de operação podem ser editadas na tela no formato `tipo|nome|alias1, alias2`. Operações sem classificação, produtos ambíguos, unidades inconsistentes e saídas que gerariam estoque negativo ficam pendentes.
+
+Após a confirmação, a RPC `confirm_import_batch` aplica todas as linhas válidas em uma única transação, respeitando a data efetiva, bloqueio do saldo e identificadores de idempotência. Lotes, linhas de origem e vínculos entre identificadores externos e produtos permanecem disponíveis para auditoria.
+
+O projeto inclui a migration `20261015100000_import_batches.sql`. Ela deve ser aplicada ao Supabase antes de publicar a versão da interface.
+
+Ainda é necessário confirmar com um relatório operacional real os nomes dos cabeçalhos, o identificador estável da linha, os códigos de operação, as unidades permitidas e o tratamento de estornos/cancelamentos específicos do sistema interno. Enquanto isso, os casos não reconhecidos permanecem pendentes e não são aplicados automaticamente.
+
+### Formatos do importador universal
+
+Além de CSV/XLSX, a central processa XML fiscal de NF-e, ZIP com XMLs e arquivos tabulares JSON/TXT. PDFs com texto selecionável passam pelo extrator nativo; PDFs compostos apenas por imagem são rejeitados informando que OCR não está configurado. A extensão não é a única fonte de decisão: assinatura binária e conteúdo são verificados, com limites de tamanho, quantidade de arquivos e caminhos internos de ZIP.
+
+A migration `20261015110000_universal_import_metadata.sql` amplia os formatos aceitos e preserva no banco o arquivo de origem, chave fiscal, série, CFOP, status fiscal, emitente e destinatário quando disponíveis.
+
 ## Verificações
 
 ```bash

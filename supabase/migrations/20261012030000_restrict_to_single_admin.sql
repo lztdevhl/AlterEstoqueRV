@@ -1,3 +1,21 @@
+-- Compatibilidade com bancos que já possuíam profiles sem o campo de permissão.
+-- A alteração é aditiva e preserva os perfis existentes como operadores.
+alter table public.profiles
+  add column if not exists role text not null default 'operador';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'profiles_role_check'
+      and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+      add constraint profiles_role_check check (role in ('admin', 'operador', 'leitura'));
+  end if;
+end;
+$$;
+
 create or replace function public.is_authorized_user()
 returns boolean
 language sql

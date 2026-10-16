@@ -4,16 +4,18 @@ import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, BarChart3, Boxes, Check,
   ClipboardList, Download, Edit3, Eye, EyeOff, Filter, LockKeyhole, Mail, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search,
-  ShieldCheck, SlidersHorizontal, Sprout, Trash2, Truck, UsersRound, X, XCircle,
+  ShieldCheck, SlidersHorizontal, Sprout, Trash2, Truck, UploadCloud, FileSpreadsheet, History, Save, UsersRound, X, XCircle,
 } from 'lucide-react'
 import { InventoryError } from './lib/inventory'
 import { csvCell, formatDateTime, formatNumber, quantityLabel, stockByUnit } from './lib/format'
 import { isAllowedEmail, isSupabaseConfigured, supabase } from './lib/supabase'
-import { deleteSupabaseCustomer, loadSupabaseInventory, registerSupabaseMovement, saveSupabaseCustomer, saveSupabaseProduct } from './lib/supabaseRepository'
-import { categories, units, type Customer, type CustomerForm, type Movement, type MovementForm, type Product, type ProductForm } from './lib/types'
+import { confirmSupabaseImportBatch, createSupabaseImportBatch, deleteSupabaseCustomer, loadSupabaseInventory, registerSupabaseMovement, saveSupabaseCustomer, saveSupabaseExternalMapping, saveSupabaseProduct, updateSupabaseImportRows } from './lib/supabaseRepository'
+import { calculateImportProjection, DEFAULT_OPERATION_RULES, parseReportRows, type ImportFilter, type ImportRow, type ImportParseResult, type OperationRule, type ProductExternalMapping } from './lib/importParser'
+import { readUniversalFiles } from './lib/importFormats'
+import { categories, units, type Customer, type CustomerForm, type ImportBatch, type Movement, type MovementForm, type Product, type ProductForm, type MovementType } from './lib/types'
 import dashboardMockup from '../references/1.png'
 
-type View = 'dashboard' | 'produtos' | 'clientes' | 'movimentacoes' | 'relatorios'
+type View = 'dashboard' | 'produtos' | 'clientes' | 'movimentacoes' | 'importacoes' | 'relatorios'
 type ProductStockFilter = 'todos' | 'disponivel' | 'baixo' | 'zerado'
 
 const emptyCustomerForm: CustomerForm = {
@@ -28,6 +30,7 @@ const emptyMovementForm: MovementForm = {
 }
 
 const viewMeta: Record<View, { title: string; description: string }> = {
+  importacoes: { title: 'Importar relatórios', description: 'Processe, revise e confirme operações sem lançamentos manuais.' },
   dashboard: { title: 'Visão geral', description: 'Acompanhe o pulso do seu estoque.' },
   produtos: { title: 'Produtos', description: 'Catálogo, saldos e níveis de reposição.' },
   clientes: { title: 'Clientes', description: 'Cadastre clientes e acompanhe as vendas vinculadas a cada um.' },
@@ -39,6 +42,8 @@ function App() {
   const [products, setProducts] = useState<Product[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [importBatches, setImportBatches] = useState<ImportBatch[]>([])
+  const [productMappings, setProductMappings] = useState<ProductExternalMapping[]>([])
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [dataLoading, setDataLoading] = useState(false)
@@ -65,6 +70,8 @@ function App() {
       setProducts(result.products)
       setMovements(result.movements)
       setCustomers(result.customers)
+      setImportBatches(result.importBatches)
+      setProductMappings(result.mappings)
     } catch (error) {
       setDataError(error instanceof Error ? error.message : 'Não foi possível carregar os dados do Supabase.')
     } finally {
@@ -115,6 +122,8 @@ function App() {
       setProducts([])
       setMovements([])
       setCustomers([])
+      setImportBatches([])
+      setProductMappings([])
       setDataLoading(false)
       return
     }
@@ -230,6 +239,7 @@ function App() {
         {view === 'produtos' && <ProductsView products={products} stockFilter={productStockFilter} onStockFilterChange={setProductStockFilter} onNew={() => setProductModal({ open: true })} onEdit={(product) => setProductModal({ open: true, product })} />}
         {view === 'clientes' && <CustomersView customers={customers} movements={movements} onNew={() => setCustomerModal({ open: true })} onEdit={(customer) => setCustomerModal({ open: true, customer })} onViewSales={(customerId) => { setMovementCustomerFilter(customerId); navigate('movimentacoes') }} />}
         {view === 'movimentacoes' && <MovementsView products={products} customers={customers} movements={movements} customerFilter={movementCustomerFilter} onCustomerFilterChange={setMovementCustomerFilter} onNew={() => setMovementModal(true)} />}
+        {view === 'importacoes' && <ImportationsView products={products} mappings={productMappings} batches={importBatches} onRefresh={loadData} onToast={showToast} />}
         {view === 'relatorios' && <ReportsView products={products} customers={customers} movements={movements} />}
       </main>
     </div>
@@ -350,6 +360,7 @@ function LoginScreen({ onSignedIn }: { onSignedIn: (session: Session) => void })
 
 function Sidebar({ activeView, productCount, onNavigate, mobileOpen, onClose, onReset, collapsed, onToggle }: { activeView: View; productCount: number; onNavigate: (view: View) => void; mobileOpen: boolean; onClose: () => void; onReset: () => void; collapsed: boolean; onToggle: () => void }) {
   const items: { id: View; label: string; icon: typeof BarChart3 }[] = [
+    { id: 'importacoes', label: 'Importar relatórios', icon: UploadCloud },
     { id: 'dashboard', label: 'Visão geral', icon: BarChart3 }, { id: 'produtos', label: 'Produtos', icon: Package }, { id: 'clientes', label: 'Clientes', icon: UsersRound }, { id: 'movimentacoes', label: 'Movimentações', icon: ClipboardList }, { id: 'relatorios', label: 'Relatórios', icon: ArrowDownToLine },
   ]
   return <><aside className={`sidebar ${mobileOpen ? 'open' : ''}`}><div className="brand"><div className="brand-wordmark"><strong>alternativa</strong><span>ESTOQUE</span></div><div className="sidebar-controls"><button className="sidebar-toggle" onClick={onToggle} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} title={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button><button className="sidebar-close" onClick={onClose} aria-label="Fechar menu"><X size={18} /></button></div></div><div className="workspace-label">CENTRAL DE OPERAÇÕES</div><nav>{items.map(({ id, label, icon: Icon }) => <button className={activeView === id ? 'active' : ''} key={id} onClick={() => onNavigate(id)} title={collapsed ? label : undefined}><Icon size={18} /><span>{label}</span>{id === 'produtos' && <span className="nav-count">{productCount}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-status"><span><i className="status-dot" /><b>Supabase conectado</b></span><small>Dados sincronizados remotamente</small></div><button className="sidebar-reset" onClick={onReset} title={collapsed ? 'Recarregar dados' : undefined}><RotateCcw size={15} /><span>Recarregar dados</span></button></div></aside>{mobileOpen && <div className="sidebar-overlay" onClick={onClose} />}</>
@@ -518,6 +529,158 @@ function MovementDetailsModal({ movement, product, customer, onClose }: {
       </div>
     </div>
   </Modal>
+}
+
+function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
+  products: Product[]
+  mappings: ProductExternalMapping[]
+  batches: ImportBatch[]
+  onRefresh: () => Promise<void>
+  onToast: (kind: 'success' | 'error', message: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState('')
+  const [sourceFiles, setSourceFiles] = useState<File[]>([])
+  const sourceFile = sourceFiles[0] ?? null
+  const [fileFormat, setFileFormat] = useState<ImportBatch['fileFormat']>('csv')
+  const [result, setResult] = useState<ImportParseResult | null>(null)
+  const [rows, setRows] = useState<ImportRow[]>([])
+  const [batchId, setBatchId] = useState('')
+  const [referenceStart, setReferenceStart] = useState('')
+  const [referenceEnd, setReferenceEnd] = useState('')
+  const [filter, setFilter] = useState<ImportFilter>('all')
+  const [stage, setStage] = useState<'idle' | 'reading' | 'ready' | 'saving' | 'confirming'>('idle')
+  const [error, setError] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [rulesText, setRulesText] = useState(DEFAULT_OPERATION_RULES.map((rule) => `${rule.type}|${rule.label}|${rule.aliases.join(', ')}`).join('\n'))
+
+  const rules = (): OperationRule[] => rulesText.split('\n').map((line) => {
+    const [type, label, aliases] = line.split('|')
+    return { type: type?.trim() as MovementType | 'ignorar', label: label?.trim() || type?.trim() || 'Regra', aliases: (aliases || '').split(',').map((item) => item.trim()).filter(Boolean) }
+  }).filter((rule) => ['entrada', 'saida', 'ajuste', 'ignorar'].includes(rule.type) && rule.aliases.length)
+
+  const summarize = (items: ImportRow[]) => ({
+    total: items.length,
+    valid: items.filter((row) => row.status === 'valid').length,
+    entries: items.filter((row) => row.status === 'valid' && row.type === 'entrada').length,
+    exits: items.filter((row) => row.status === 'valid' && row.type === 'saida').length,
+    ignored: items.filter((row) => row.status === 'ignored').length,
+    duplicates: items.filter((row) => row.status === 'duplicate').length,
+    pending: items.filter((row) => row.status === 'pending' && !row.errors.some((item) => /quantidade|data/i.test(item))).length,
+    invalid: items.filter((row) => row.status === 'error' || row.errors.length > 0).length,
+  })
+
+  const processFiles = async (files: File[]) => {
+    setStage('reading'); setError(''); setBatchId(''); setSourceFiles(files); setFileName(files.length === 1 ? files[0].name : `${files.length} arquivos selecionados`)
+    try {
+      const loaded = await readUniversalFiles(files)
+      setFileFormat(loaded.format)
+      const parsed = parseReportRows(loaded.rows, products, mappings, rules(), loaded.fingerprint)
+      const projectedRows = calculateImportProjection(parsed.rows, products)
+      const parserWarnings = loaded.format === 'pdf' ? parsed.warnings.filter((warning) => !/coluna de quantidade|coluna de opera[cç][aã]o/i.test(warning)) : parsed.warnings
+      setResult({ ...parsed, rows: projectedRows, warnings: [...new Set([...loaded.warnings, ...parserWarnings])], documentErrors: loaded.documents.flatMap((document) => document.errors), sourceDocuments: loaded.documents, detectedFormat: loaded.format }); setRows(projectedRows); setStage('ready')
+    } catch (cause) {
+      setStage('idle'); setError(cause instanceof Error ? cause.message : 'Não foi possível ler o relatório.')
+    }
+  }
+
+  const processFile = async (file: File) => processFiles([file])
+
+  const updateRow = (rowNumber: number, update: Partial<ImportRow>) => {
+    setRows((current) => calculateImportProjection(current.map((row) => {
+      if (row.rowNumber !== rowNumber) return row
+      const next = { ...row, ...update }
+      const isTypeChange = Object.keys(update).every((key) => ['type', 'status', 'errors'].includes(key))
+      if (isTypeChange) {
+        const errors = row.errors.filter((item) => !/tipo de opera[cç][aã]o pendente|pedido de venda.*pendente/i.test(item))
+        if (!update.type) errors.push('Tipo de operação pendente de classificação.')
+        next.manualClassification = Boolean(update.type)
+        next.errors = errors
+        next.status = next.productId && next.quantity && next.date && errors.length === 0 ? 'valid' : 'pending'
+      }
+      return next
+    }), products))
+  }
+
+  const savePreview = async () => {
+    if (!rows.length) return
+    setStage('saving'); setError('')
+    try {
+      const id = batchId || await createSupabaseImportBatch({ fileName, fileFormat, referenceStart, referenceEnd, rows, warnings: result?.warnings ?? [], fileCount: sourceFiles.length, detectedFormats: [...new Set(result?.sourceDocuments?.map((document) => document.format) ?? [fileFormat])] })
+      setBatchId(id)
+      if (batchId) await updateSupabaseImportRows(id, rows)
+      onToast('success', 'Prévia salva. O estoque ainda não foi alterado.')
+      setStage('ready')
+      await onRefresh()
+    } catch (cause) {
+      setStage('ready'); setError(cause instanceof Error ? cause.message : 'Não foi possível salvar a prévia.')
+    }
+  }
+
+  const confirm = async () => {
+    const summary = summarize(rows)
+    if (result?.documentErrors?.length) { onToast('error', 'Remova ou corrija os documentos que não puderam ser lidos antes de confirmar.'); return }
+    if (summary.pending || summary.invalid) { onToast('error', 'Resolva todos os registros pendentes antes de confirmar.'); return }
+    if (!window.confirm('Confirmar este lote? As movimentações válidas serão aplicadas em uma única transação.')) return
+    setStage('confirming'); setError('')
+    try {
+      const id = batchId || await createSupabaseImportBatch({ fileName, fileFormat, referenceStart, referenceEnd, rows, warnings: result?.warnings ?? [], fileCount: sourceFiles.length, detectedFormats: [...new Set(result?.sourceDocuments?.map((document) => document.format) ?? [fileFormat])] })
+      setBatchId(id)
+      await updateSupabaseImportRows(id, rows)
+      const confirmation = await confirmSupabaseImportBatch(id)
+      onToast('success', `${confirmation?.imported_count ?? 0} operações importadas. ${confirmation?.duplicate_count ?? 0} duplicidades e ${confirmation?.ignored_count ?? 0} registros não-estoque ignorados.`)
+      setRows([]); setResult(null); setBatchId(''); setFileName(''); setStage('idle'); await onRefresh()
+    } catch (cause) {
+      setStage('ready'); setError(cause instanceof Error ? cause.message : 'Falha na confirmação. Nenhuma alteração parcial foi mantida.')
+    }
+  }
+
+  const chooseProduct = async (row: ImportRow, productId: string) => {
+    const product = products.find((item) => item.id === productId)
+    if (!product) return
+    const errors = row.errors.filter((item) => !item.toLowerCase().includes('produto') && !item.toLowerCase().includes('unidade de medida'))
+    const next = { ...row, productId, productMatch: 'mapping' as const, status: errors.length ? 'pending' as const : 'valid' as const, errors }
+    updateRow(row.rowNumber, next)
+    const identifier = row.externalCode || row.barcode || row.productName
+    const identifierType = row.externalCode ? 'external_code' : row.barcode ? 'barcode' : 'name'
+    if (identifier) {
+      try { await saveSupabaseExternalMapping({ externalSystem: 'relatorio', identifierType, externalIdentifier: identifier, productId }) } catch (cause) { onToast('error', cause instanceof Error ? cause.message : 'Não foi possível salvar o vínculo.') }
+    }
+  }
+
+  const visibleRows = rows.filter((row) => filter === 'all' || filter === 'valid' && row.status === 'valid' || filter === 'entrada' && row.type === 'entrada' || filter === 'saida' && row.type === 'saida' || filter === 'duplicate' && row.status === 'duplicate' || filter === 'unmatched' && !row.productId || filter === 'error' && row.errors.length > 0)
+  const summary = summarize(rows)
+  const previewLabel = fileFormat === 'pdf' ? `${result?.sourceDocuments?.find((document) => document.format === 'pdf')?.documentLabel ?? 'PDF textual'} · ${rows.length} registros extraídos` : `${fileFormat.toUpperCase()} · ${result?.headers.length ?? 0} colunas reconhecidas`
+
+  return <div className="imports-page">
+    <section className="content-card import-hero">
+      <div><p className="eyebrow">INGESTÃO CONTROLADA</p><h2>Importe operações do seu relatório</h2><p className="muted">O arquivo é lido e validado antes de qualquer alteração. Produtos ambíguos e operações sem regra ficam pendentes para revisão.</p></div>
+      <input ref={inputRef} type="file" multiple accept=".xml,.zip,.pdf,.csv,.xls,.xlsx,.txt,.json" hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) void processFiles(files); event.currentTarget.value = '' }} />
+      <button className="import-dropzone" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const files = Array.from(event.dataTransfer.files); if (files.length) void processFiles(files) }}><UploadCloud size={23} /><strong>{fileName || 'Selecione ou arraste um relatório'}</strong><span>XML, ZIP, PDF, CSV, Excel, TXT ou JSON · até 50 arquivos por lote</span></button>
+    </section>
+    {error && <div className="import-alert error"><XCircle size={17} />{error}</div>}
+    {stage === 'reading' && <div className="import-progress"><span className="loading-dot" /> Lendo cabeçalhos, produtos e operações...</div>}
+    {result && <>
+      <div className="import-preview-label">{previewLabel}</div>
+      <section className="content-card import-ignored-summary"><p className="eyebrow">SEM MOVIMENTAÇAO DE ESTOQUE</p><strong>{summary.ignored} registros serão ignorados</strong><span className="muted">Cancelamentos, estornos ou registros financeiros permanecem no lote para auditoria.</span></section>
+      {result.warnings.length > 0 && <div className="import-alert"><AlertTriangle size={17} />{result.warnings.join(' ')}</div>}
+      <section className="import-toolbar content-card">
+        <div className="import-toolbar-heading"><div><p className="eyebrow">PRÉVIA DO LOTE</p><h2>{fileName}</h2><span>{fileFormat.toUpperCase()} · {result.headers.length} colunas reconhecidas</span></div><div className="import-actions"><button className="button secondary" onClick={() => setHistoryOpen((current) => !current)}><History size={16} /> Histórico</button><button className="button secondary" onClick={() => void savePreview()} disabled={stage === 'saving' || stage === 'confirming'}><Save size={16} /> {stage === 'saving' ? 'Salvando...' : 'Salvar prévia'}</button><button className="button primary" onClick={() => void confirm()} disabled={stage === 'saving' || stage === 'confirming' || summary.pending > 0 || summary.invalid > 0 || Boolean(result.documentErrors?.length)}><Check size={16} /> {stage === 'confirming' ? 'Confirmando...' : 'Confirmar importação'}</button></div></div>
+        <div className="import-period"><label>Início do período<input type="date" value={referenceStart} onChange={(event) => setReferenceStart(event.target.value)} /></label><label>Fim do período<input type="date" value={referenceEnd} onChange={(event) => setReferenceEnd(event.target.value)} /></label><span className="import-state"><span className={`status-dot ${batchId ? 'ready' : ''}`} />{batchId ? 'Prévia registrada no histórico' : 'Ainda não persistida'}</span></div>
+      </section>
+      <section className="import-metrics">{[['Linhas lidas', summary.total, 'neutral'], ['Operações válidas', summary.valid, 'green'], ['Entradas', summary.entries, 'green'], ['Saídas', summary.exits, 'blue'], ['Pendentes', summary.pending, 'amber'], ['Inválidas', summary.invalid, 'red']].map(([label, value, tone]) => <div className={`import-metric ${tone}`} key={String(label)}><span>{label}</span><strong>{value}</strong></div>)}</section>
+      <section className="content-card import-config"><div><p className="eyebrow">MAPEAMENTO CONFIGURÁVEL</p><h3>Regras de operação</h3><p className="muted">Uma regra por linha: tipo|nome|texto do relatório separado por vírgula. Linhas sem correspondência continuam pendentes.</p></div><textarea value={rulesText} onChange={(event) => setRulesText(event.target.value)} rows={4} /><button className="button secondary" onClick={() => { if (sourceFile) void processFile(sourceFile) }}><FileSpreadsheet size={15} /> Reprocessar regras</button></section>
+      <section className="content-card import-table-card"><div className="card-toolbar"><div><p className="eyebrow">REVISÃO HUMANA</p><h2>{visibleRows.length} registros exibidos</h2></div><div className="import-filters">{([['all', 'Todos'], ['valid', 'Válidos'], ['entrada', 'Entradas'], ['saida', 'Saídas'], ['unmatched', 'Sem produto'], ['error', 'Com erros']] as [ImportFilter, string][]).map(([value, label]) => <button className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{label}</button>)}</div></div><div className="table-wrapper"><table className="import-table"><thead><tr><th>Linha / data</th><th>Documento</th><th>Produto do relatório</th><th>Produto cadastrado</th><th>Operação</th><th>Quantidade</th><th>Saldo projetado</th><th>Situação</th></tr></thead><tbody>{visibleRows.map((row) => <ImportRowView key={row.rowNumber} row={row} products={products} onProductChange={(id) => void chooseProduct(row, id)} onTypeChange={(type) => updateRow(row.rowNumber, { type, status: row.productId && row.quantity && row.date ? 'valid' : 'pending', errors: row.errors.filter((item) => !item.includes('Tipo de operação')) })} />)}</tbody></table></div></section>
+    </>}
+    {!result && <section className="content-card import-empty"><FileSpreadsheet size={26} /><h3>Nenhum relatório selecionado</h3><p>Comece com um arquivo exportado pelo sistema interno. O formato do cabeçalho será detectado automaticamente.</p></section>}
+    {historyOpen && <section className="content-card import-history"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Histórico de lotes</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)} aria-label="Fechar histórico"><X size={18} /></button></div>{batches.length === 0 ? <EmptyState compact title="Nenhum lote processado" description="As prévias e confirmações aparecerão aqui." /> : <div className="batch-list">{batches.map((batch) => <div className="batch-row" key={batch.id}><span className="batch-icon"><History size={17} /></span><div><strong>{batch.fileName}</strong><small>{formatDateTime(batch.processedAt)} · {batch.totalRows} linhas · {batch.importedRows} importadas · {batch.duplicateRows} duplicadas</small></div><span className={`batch-status ${batch.status}`}>{batch.status === 'confirmed' ? 'Confirmado' : batch.status === 'review' ? 'Em revisão' : batch.status}</span></div>)}</div>}</section>}
+  </div>
+}
+
+function ImportRowView({ row, products, onProductChange, onTypeChange }: { row: ImportRow; products: Product[]; onProductChange: (id: string) => void; onTypeChange: (type: MovementType | null) => void }) {
+  const product = products.find((item) => item.id === row.productId)
+  const status = row.errors.length ? 'Pendente' : row.status === 'valid' ? 'Válido' : row.status === 'duplicate' ? 'Duplicado' : 'Pendente'
+  return <tr className={row.errors.length ? 'import-row-warning' : ''}><td><strong>#{row.rowNumber}</strong><small>{row.date ? formatDateTime(row.date) : 'Data ausente'}</small></td><td>{row.document || '—'}</td><td><strong>{row.productText || 'Produto ausente'}</strong><small>{row.externalCode || row.barcode || 'Sem identificador'}</small></td><td><select value={row.productId} onChange={(event) => onProductChange(event.target.value)}><option value="">Selecionar produto</option>{products.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}{item.sku ? ` · ${item.sku}` : ''}</option>)}</select>{row.productMatch === 'suggestion' && <small className="table-subtext">Sugestão para revisão</small>}</td><td><select value={row.type ?? ''} onChange={(event) => onTypeChange((event.target.value || null) as MovementType | null)}><option value="">Pendente</option><option value="entrada">Entrada</option><option value="saida">Saída</option><option value="ajuste">Ajuste</option></select><small className="table-subtext">{row.operationText || 'Sem tipo no arquivo'}</small></td><td><strong>{row.quantity ?? '—'}</strong>{row.unit && <small>{row.unit}</small>}</td><td>{row.projectedStock === undefined ? '—' : quantityLabel(row.projectedStock, product?.unit ?? row.unit ?? 'un')}</td><td><span className={`import-status ${row.errors.length ? 'warning' : 'success'}`}><span />{status}</span>{row.errors.slice(0, 2).map((item) => <small className="import-error" key={item}>{item}</small>)}</td></tr>
 }
 
 function ReportsView({ products, customers, movements }: { products: Product[]; customers: Customer[]; movements: Movement[] }) {

@@ -35,3 +35,11 @@ npx supabase gen types typescript --project-id "SEU_PROJECT_REF" --schema public
 ## Aplicação
 
 O cliente está em `src/lib/supabase.ts`, o carregamento e as gravações estão em `src/lib/supabaseRepository.ts`, e o `App` já usa essas funções em vez de `localStorage`.
+
+## Importações
+
+A migration `20261015100000_import_batches.sql` adiciona lotes e linhas de origem, mapeamentos persistentes de identificadores externos e os vínculos de auditoria nas movimentações. A função `confirm_import_batch` bloqueia os saldos envolvidos, processa as linhas pela data efetiva e aplica o lote em uma única transação; qualquer falha desfaz o lote inteiro.
+
+A migration `20261015110000_universal_import_metadata.sql` amplia os formatos do lote e adiciona metadados fiscais e o arquivo de origem nas linhas importadas. Aplique as duas migrations depois das migrations de schema base.
+
+A migration `20261015120000_guard_non_stock_imports.sql` impede no backend que pedidos de venda sejam confirmados como movimentações de estoque, mesmo que uma linha seja alterada manualmente.

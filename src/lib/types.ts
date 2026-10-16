@@ -58,6 +58,33 @@ export interface Movement {
   customerId?: string
   customerName?: string
   isSale?: boolean
+  batchId?: string
+  importRowId?: string
+  sourceOperationKey?: string
+  effectiveAt?: string
+}
+
+export interface ImportBatch {
+  id: string
+  fileName: string
+  fileFormat: 'xml' | 'zip' | 'pdf' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
+  referenceStart: string
+  referenceEnd: string
+  status: 'review' | 'confirmed' | 'failed' | 'reversed'
+  processedAt: string
+  confirmedAt: string
+  createdBy: string
+  totalRows: number
+  importedRows: number
+  duplicateRows: number
+  ignoredRows: number
+  fileCount: number
+  detectedFormats: string[]
+  pendingRows: number
+  invalidRows: number
+  warnings: string[]
+  errors: string[]
+  createdAt: string
 }
 
 export interface ProductForm {

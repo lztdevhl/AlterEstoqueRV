@@ -13,11 +13,12 @@ export const formatDateTime = (value: string) =>
     .format(new Date(value))
     .replace('.', '')
 
-export const quantityLabel = (value: number, unit: Unit) => `${formatNumber(value)}${unit ? ` ${unit}` : ''}`
+export const quantityLabel = (value: number, unit: Unit | string) => `${formatNumber(value)}${unit ? ` ${unit}` : ''}`
 
 export const stockByUnit = (products: Product[]) =>
   products.reduce<Record<string, number>>((acc, product) => {
-    if (product.unit) acc[product.unit] = (acc[product.unit] ?? 0) + product.quantity
+    const unit = product.unit || 'itens'
+    acc[unit] = (acc[unit] ?? 0) + product.quantity
     return acc
   }, {})
 
