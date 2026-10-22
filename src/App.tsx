@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom'
 import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, BarChart3, Boxes, Check,
-  ClipboardList, Download, Edit3, Eye, EyeOff, Filter, LockKeyhole, Mail, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search,
+  ClipboardList, Download, Edit3, Eye, EyeOff, Filter, LockKeyhole, Mail, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, Search,
   ShieldCheck, SlidersHorizontal, Sprout, Trash2, Truck, UploadCloud, FileSpreadsheet, History, Save, UsersRound, X, XCircle,
 } from 'lucide-react'
 import { InventoryError } from './lib/inventory'
 import { csvCell, formatDateTime, formatNumber, quantityLabel, stockByUnit } from './lib/format'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { confirmSupabaseImportBatch, createSupabaseImportBatch, deleteSupabaseCustomer, loadSupabaseInventory, registerSupabaseMovement, saveSupabaseCustomer, saveSupabaseExternalMapping, saveSupabaseProduct, updateSupabaseImportRows } from './lib/supabaseRepository'
+import { confirmSupabaseImportBatch, createSupabaseImportBatch, deleteSupabaseCustomer, loadSupabaseInventory, registerSupabaseMovement, resetSupabaseOperationalData, saveSupabaseCustomer, saveSupabaseExternalMapping, saveSupabaseProduct, updateSupabaseImportRows } from './lib/supabaseRepository'
 import { calculateImportProjection, DEFAULT_OPERATION_RULES, parseReportRows, type ImportFilter, type ImportRow, type ImportParseResult, type OperationRule, type ProductExternalMapping } from './lib/importParser'
 import { readUniversalFiles } from './lib/importFormats'
 import { categories, units, type Customer, type CustomerForm, type ImportBatch, type Movement, type MovementForm, type Product, type ProductForm, type MovementType } from './lib/types'
@@ -203,9 +203,14 @@ function App() {
   }
 
   const resetData = async () => {
-    if (!window.confirm('Recarregar os dados diretamente do Supabase?')) return
-    await loadData()
-    showToast('success', 'Dados recarregados do Supabase.')
+    if (!window.confirm('Zerar estoque, movimentações, clientes e importações? Os produtos cadastrados e os usuários serão mantidos. Esta ação não pode ser desfeita.')) return
+    try {
+      await resetSupabaseOperationalData()
+      await loadData()
+      showToast('success', 'Dados zerados. Os produtos foram mantidos.')
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Não foi possível zerar os dados.')
+    }
   }
 
   if (!isSupabaseConfigured) return <SetupScreen />
@@ -347,7 +352,7 @@ function Sidebar({ activeView, productCount, onNavigate, mobileOpen, onClose, on
     { id: 'importacoes', label: 'Importar relatórios', icon: UploadCloud },
     { id: 'dashboard', label: 'Visão geral', icon: BarChart3 }, { id: 'produtos', label: 'Produtos', icon: Package }, { id: 'clientes', label: 'Clientes', icon: UsersRound }, { id: 'movimentacoes', label: 'Movimentações', icon: ClipboardList }, { id: 'relatorios', label: 'Relatórios', icon: ArrowDownToLine },
   ]
-  return <><aside className={`sidebar ${mobileOpen ? 'open' : ''}`}><div className="brand"><div className="brand-wordmark"><strong>alternativa</strong><span>ESTOQUE</span></div><div className="sidebar-controls"><button className="sidebar-toggle" onClick={onToggle} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} title={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button><button className="sidebar-close" onClick={onClose} aria-label="Fechar menu"><X size={18} /></button></div></div><div className="workspace-label">CENTRAL DE OPERAÇÕES</div><nav>{items.map(({ id, label, icon: Icon }) => <button className={activeView === id ? 'active' : ''} key={id} onClick={() => onNavigate(id)} title={collapsed ? label : undefined}><Icon size={18} /><span>{label}</span>{id === 'produtos' && <span className="nav-count">{productCount}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-status"><span><i className="status-dot" /><b>Supabase conectado</b></span><small>Dados sincronizados remotamente</small></div><button className="sidebar-reset" onClick={onReset} title={collapsed ? 'Recarregar dados' : undefined}><RotateCcw size={15} /><span>Recarregar dados</span></button></div></aside>{mobileOpen && <div className="sidebar-overlay" onClick={onClose} />}</>
+  return <><aside className={`sidebar ${mobileOpen ? 'open' : ''}`}><div className="brand"><div className="brand-wordmark"><strong>alternativa</strong><span>ESTOQUE</span></div><div className="sidebar-controls"><button className="sidebar-toggle" onClick={onToggle} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} title={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</button><button className="sidebar-close" onClick={onClose} aria-label="Fechar menu"><X size={18} /></button></div></div><div className="workspace-label">CENTRAL DE OPERAÇÕES</div><nav>{items.map(({ id, label, icon: Icon }) => <button className={activeView === id ? 'active' : ''} key={id} onClick={() => onNavigate(id)} title={collapsed ? label : undefined}><Icon size={18} /><span>{label}</span>{id === 'produtos' && <span className="nav-count">{productCount}</span>}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-status"><span><i className="status-dot" /><b>Supabase conectado</b></span><small>Dados sincronizados remotamente</small></div><button className="sidebar-reset" onClick={onReset} title={collapsed ? 'Zerar dados, mantendo produtos' : undefined}><Trash2 size={15} /><span>Zerar dados, manter produtos</span></button></div></aside>{mobileOpen && <div className="sidebar-overlay" onClick={onClose} />}</>
 }
 
 function Dashboard({ products, customers, movements, onNavigate, onViewProducts }: { products: Product[]; customers: Customer[]; movements: Movement[]; onNavigate: (view: View) => void; onViewProducts: (filter?: ProductStockFilter) => void }) {

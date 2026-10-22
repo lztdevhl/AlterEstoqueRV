@@ -41,6 +41,12 @@ export async function loadSupabaseInventory(): Promise<{ products: Product[]; mo
   }
 }
 
+export async function resetSupabaseOperationalData() {
+  const client = requireSupabase()
+  const { error } = await client.rpc('reset_operational_data')
+  if (error) throw error
+}
+
 export async function createSupabaseImportBatch(input: {
   fileName: string
   fileFormat: ImportBatch['fileFormat']

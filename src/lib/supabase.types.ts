@@ -401,6 +401,10 @@ export type Database = {
         Args: { p_batch_id: string }
         Returns: { batch_id: string; imported_count: number; duplicate_count: number; ignored_count: number; confirmed_at: string }[]
       }
+      reset_operational_data: {
+        Args: Record<string, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
