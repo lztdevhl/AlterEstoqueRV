@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { InventoryError } from './lib/inventory'
 import { csvCell, formatDateTime, formatNumber, quantityLabel, stockByUnit } from './lib/format'
-import { isAllowedEmail, isSupabaseConfigured, supabase } from './lib/supabase'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { confirmSupabaseImportBatch, createSupabaseImportBatch, deleteSupabaseCustomer, loadSupabaseInventory, registerSupabaseMovement, saveSupabaseCustomer, saveSupabaseExternalMapping, saveSupabaseProduct, updateSupabaseImportRows } from './lib/supabaseRepository'
 import { calculateImportProjection, DEFAULT_OPERATION_RULES, parseReportRows, type ImportFilter, type ImportRow, type ImportParseResult, type OperationRule, type ProductExternalMapping } from './lib/importParser'
 import { readUniversalFiles } from './lib/importFormats'
@@ -89,11 +89,6 @@ function App() {
     let mounted = true
     client.auth.getSession().then(async ({ data }) => {
       if (!mounted) return
-      if (data.session && !isAllowedEmail(data.session.user.email)) {
-        await client.auth.signOut()
-        setAuthLoading(false)
-        return
-      }
       setSession(data.session)
       setAuthLoading(false)
     }).catch(() => {
@@ -101,12 +96,6 @@ function App() {
     })
 
     const { data: authListener } = client.auth.onAuthStateChange((_event, nextSession) => {
-      if (nextSession && !isAllowedEmail(nextSession.user.email)) {
-        void client.auth.signOut()
-        setSession(null)
-        setAuthLoading(false)
-        return
-      }
       setSession(nextSession)
       setAuthLoading(false)
     })
@@ -253,7 +242,7 @@ function App() {
 function SetupScreen() {
   return <StatusScreen
     title="Configure o Supabase"
-    description="Crie um arquivo .env.local a partir do .env.example e preencha VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY e VITE_ALLOWED_EMAIL."
+    description="Crie um arquivo .env.local a partir do .env.example e preencha VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY."
   />
 }
 
@@ -280,11 +269,6 @@ function LoginScreen({ onSignedIn }: { onSignedIn: (session: Session) => void })
     if (!supabase) return
     setLoading(true)
     setError('')
-    if (!isAllowedEmail(email)) {
-      setLoading(false)
-      setError('Este e-mail não está autorizado a acessar o sistema.')
-      return
-    }
     const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     setLoading(false)
     if (signInError || !data.session) {
@@ -328,7 +312,7 @@ function LoginScreen({ onSignedIn }: { onSignedIn: (session: Session) => void })
               </div>
             </label>
             <div className="login-form-meta">
-              <span>Use seu usuário autorizado</span>
+              <span>Use seu usuário cadastrado</span>
               <span><ShieldCheck size={14} /> Acesso protegido</span>
             </div>
             <div className="login-feedback" aria-live="polite">{error && <p className="login-error"><XCircle size={15} />{error}</p>}</div>

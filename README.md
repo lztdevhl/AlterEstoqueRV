@@ -16,7 +16,7 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Preencha `.env.local` com `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `VITE_ALLOWED_EMAIL` antes de abrir a aplicação. O último valor deve ser o seu único e-mail autorizado. Depois, crie esse usuário em Authentication no painel do Supabase e entre pela tela de login.
+Preencha `.env.local` com `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` antes de abrir a aplicação. Depois, crie os usuários em Authentication > Users no painel do Supabase e entre pela tela de login. O acesso às tabelas é controlado pelo perfil criado automaticamente no banco.
 
 ## Banco Supabase
 
