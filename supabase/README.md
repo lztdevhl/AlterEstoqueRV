@@ -21,6 +21,7 @@ O frontend usa somente a chave pública/publishable ou anon. Nunca coloque `serv
 - `20261012030000_restrict_to_single_admin.sql`: cria perfis e a regra de autorização original.
 - `20261022100000_allow_multiple_users.sql`: libera múltiplos usuários com perfil no banco e remove o bloqueio prático ao primeiro administrador.
 - `20261022110000_reset_operational_data_keep_products.sql`: zera dados operacionais pela interface, preservando produtos e usuários.
+- `20261022130000_fix_reset_operational_data_safe_update.sql`: corrige o reset para bancos que exigem `WHERE` em atualizações.
 - `20261012040000_replace_catalog_with_pdf_products.sql`: remove o catálogo e o histórico antigos e insere somente os produtos do PDF.
 - `20261014100000_import_lunet_catalog.sql`: substitui o catálogo pelos 53 produtos da planilha em `ex`, preservando códigos, descrições e 38 fotos incorporadas.
 
