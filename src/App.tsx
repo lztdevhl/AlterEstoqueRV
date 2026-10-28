@@ -541,12 +541,31 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
   const [stage, setStage] = useState<'idle' | 'reading' | 'ready' | 'saving' | 'confirming'>('idle')
   const [error, setError] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [imageDate, setImageDate] = useState(() => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  })
   const [rulesText, setRulesText] = useState(DEFAULT_OPERATION_RULES.map((rule) => `${rule.type}|${rule.label}|${rule.aliases.join(', ')}`).join('\n'))
 
   const rules = (): OperationRule[] => rulesText.split('\n').map((line) => {
     const [type, label, aliases] = line.split('|')
     return { type: type?.trim() as MovementType | 'ignorar', label: label?.trim() || type?.trim() || 'Regra', aliases: (aliases || '').split(',').map((item) => item.trim()).filter(Boolean) }
   }).filter((rule) => ['entrada', 'saida', 'ajuste', 'ignorar'].includes(rule.type) && rule.aliases.length)
+
+  const applyImageDate = (dateValue: string) => {
+    setImageDate(dateValue)
+    if (!dateValue || !rows.length) return
+    const datedRows = calculateImportProjection(rows.map((row) => {
+      if (row.date) return row
+      const errors = row.errors.filter((item) => !/Data da operação inválida ou ausente\./i.test(item))
+      return { ...row, date: `${dateValue}T12:00:00.000Z`, errors, status: errors.length ? 'pending' as const : 'valid' as const }
+    }), products)
+    setRows(datedRows)
+    setResult((current) => current ? { ...current, rows: datedRows } : current)
+  }
 
   const summarize = (items: ImportRow[]) => ({
     total: items.length,
@@ -560,11 +579,18 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
   })
 
   const processFiles = async (files: File[]) => {
+    setResult(null); setRows([]); setFilter('all')
     setStage('reading'); setError(''); setBatchId(''); setSourceFiles(files); setFileName(files.length === 1 ? files[0].name : `${files.length} arquivos selecionados`)
     try {
       const loaded = await readUniversalFiles(files)
       setFileFormat(loaded.format)
       const parsed = parseReportRows(loaded.rows, products, mappings, rules(), loaded.fingerprint)
+      if (!loaded.rows.length) throw new Error(loaded.warnings.join(' ') || 'Nenhum movimento encontrado no relatório.')
+      if (imageDate) parsed.rows = parsed.rows.map((row) => {
+        if (row.date) return row
+        const errors = row.errors.filter((item) => item !== 'Data da operação inválida ou ausente.')
+        return { ...row, date: `${imageDate}T12:00:00.000Z`, errors, status: errors.length ? 'pending' : 'valid' }
+      })
       const projectedRows = calculateImportProjection(parsed.rows, products)
       const parserWarnings = loaded.format === 'pdf' ? parsed.warnings.filter((warning) => !/coluna de quantidade|coluna de opera[cç][aã]o/i.test(warning)) : parsed.warnings
       setResult({ ...parsed, rows: projectedRows, warnings: [...new Set([...loaded.warnings, ...parserWarnings])], documentErrors: loaded.documents.flatMap((document) => document.errors), sourceDocuments: loaded.documents, detectedFormat: loaded.format }); setRows(projectedRows); setStage('ready')
@@ -573,7 +599,7 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
     }
   }
 
-  const processFile = async (file: File) => processFiles([file])
+  const processFile = async (_file: File) => processFiles(sourceFiles)
 
   const updateRow = (rowNumber: number, update: Partial<ImportRow>) => {
     setRows((current) => calculateImportProjection(current.map((row) => {
@@ -585,7 +611,7 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
         if (!update.type) errors.push('Tipo de operação pendente de classificação.')
         next.manualClassification = Boolean(update.type)
         next.errors = errors
-        next.status = next.productId && next.quantity && next.date && errors.length === 0 ? 'valid' : 'pending'
+        next.status = next.productId && next.quantity !== null && next.date && errors.length === 0 ? 'valid' : 'pending'
       }
       return next
     }), products))
@@ -607,6 +633,7 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
   }
 
   const confirm = async () => {
+    if (!rows.length) { onToast('error', 'Envie um relatório com movimentos reconhecidos.'); return }
     const summary = summarize(rows)
     if (result?.documentErrors?.length) { onToast('error', 'Remova ou corrija os documentos que não puderam ser lidos antes de confirmar.'); return }
     if (summary.pending || summary.invalid) { onToast('error', 'Resolva todos os registros pendentes antes de confirmar.'); return }
@@ -629,7 +656,11 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
     if (!product) return
     const errors = row.errors.filter((item) => !item.toLowerCase().includes('produto') && !item.toLowerCase().includes('unidade de medida'))
     const next = { ...row, productId, productMatch: 'mapping' as const, status: errors.length ? 'pending' as const : 'valid' as const, errors }
-    updateRow(row.rowNumber, next)
+    setRows((current) => calculateImportProjection(current.map((item) => {
+      if (item.productName !== row.productName || item.sourceFile !== row.sourceFile) return item
+      const itemErrors = item.errors.filter((message) => !/produto|unidade de medida/i.test(message))
+      return { ...item, productId: next.productId, productMatch: 'mapping' as const, errors: itemErrors, status: itemErrors.length ? 'pending' as const : 'valid' as const }
+    }), products))
     const identifier = row.externalCode || row.barcode || row.productName
     const identifierType = row.externalCode ? 'external_code' : row.barcode ? 'barcode' : 'name'
     if (identifier) {
@@ -639,13 +670,17 @@ function ImportationsView({ products, mappings, batches, onRefresh, onToast }: {
 
   const visibleRows = rows.filter((row) => filter === 'all' || filter === 'valid' && row.status === 'valid' || filter === 'entrada' && row.type === 'entrada' || filter === 'saida' && row.type === 'saida' || filter === 'duplicate' && row.status === 'duplicate' || filter === 'unmatched' && !row.productId || filter === 'error' && row.errors.length > 0)
   const summary = summarize(rows)
-  const previewLabel = fileFormat === 'pdf' ? `${result?.sourceDocuments?.find((document) => document.format === 'pdf')?.documentLabel ?? 'PDF textual'} · ${rows.length} registros extraídos` : `${fileFormat.toUpperCase()} · ${result?.headers.length ?? 0} colunas reconhecidas`
+  const previewLabel = fileFormat === 'pdf' ? `${result?.sourceDocuments?.find((document) => document.format === 'pdf')?.documentLabel ?? 'PDF textual'} · ${rows.length} registros extraídos` : fileFormat === 'image' ? `IMAGEM/OCR · ${rows.length} registros extraídos` : `${fileFormat.toUpperCase()} · ${result?.headers.length ?? 0} colunas reconhecidas`
 
   return <div className="imports-page">
+    <label className="import-period">Data do relatório (preenchida automaticamente se não aparecer no print)
+      <input type="date" value={imageDate} onChange={(event) => applyImageDate(event.target.value)} />
+      {sourceFiles.length > 0 && <button className="button secondary" disabled={stage !== 'ready' && stage !== 'idle'} onClick={() => void processFiles(sourceFiles)}>Ler novamente</button>}
+    </label>
     <section className="content-card import-hero">
       <div><p className="eyebrow">INGESTÃO CONTROLADA</p><h2>Importe operações do seu relatório</h2><p className="muted">O arquivo é lido e validado antes de qualquer alteração. Produtos ambíguos e operações sem regra ficam pendentes para revisão.</p></div>
-      <input ref={inputRef} type="file" multiple accept=".xml,.zip,.pdf,.csv,.xls,.xlsx,.txt,.json" hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) void processFiles(files); event.currentTarget.value = '' }} />
-      <button className="import-dropzone" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const files = Array.from(event.dataTransfer.files); if (files.length) void processFiles(files) }}><UploadCloud size={23} /><strong>{fileName || 'Selecione ou arraste um relatório'}</strong><span>XML, ZIP, PDF, CSV, Excel, TXT ou JSON · até 50 arquivos por lote</span></button>
+      <input ref={inputRef} type="file" multiple accept=".xml,.zip,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.csv,.xls,.xlsx,.txt,.json,image/*" hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) void processFiles(files); event.currentTarget.value = '' }} />
+      <button className="import-dropzone" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const files = Array.from(event.dataTransfer.files); if (files.length) void processFiles(files) }}><UploadCloud size={23} /><strong>{fileName || 'Selecione ou arraste um relatório ou print'}</strong><span>PDF, print PNG/JPG, XML, CSV, Excel, TXT ou JSON · até 50 arquivos por lote</span></button>
     </section>
     {error && <div className="import-alert error"><XCircle size={17} />{error}</div>}
     {stage === 'reading' && <div className="import-progress"><span className="loading-dot" /> Lendo cabeçalhos, produtos e operações...</div>}

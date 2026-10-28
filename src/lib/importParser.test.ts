@@ -8,6 +8,18 @@ const products: Product[] = [
 ]
 
 describe('importParser', () => {
+  it('tolera um erro de OCR sem confundir modelos numéricos', () => {
+    const match = (name: string) => matchImportProduct({ externalCode: '', barcode: '', productName: name }, products)
+    expect(match('Protecochoo 200').productId).toBe('p-1')
+    expect(match('Protecochoo 600').productId).toBe('')
+  })
+
+  it('recalcula o saldo depois de corrigir o produto de uma saída', () => {
+    const rows = parseReportRows([{ Data: '27/10/2026', Produto: 'Protecocho 250', Quantidade: '5', Tipo: 'Saída' }], products).rows
+    const projected = calculateImportProjection(rows, products)
+    expect(projected[0].status).toBe('pending')
+    expect(calculateImportProjection([{ ...projected[0], productId: 'p-1' }], products)[0].status).toBe('valid')
+  })
   it('prioriza SKU exato antes do nome', () => {
     expect(matchImportProduct({ externalCode: 'PD00002', barcode: '', productName: 'Protecocho 200' }, products).productId).toBe('p-2')
   })

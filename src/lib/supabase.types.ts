@@ -10,7 +10,7 @@ export type Database = {
         Row: {
           id: string
           file_name: string
-          file_format: 'xml' | 'zip' | 'pdf' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
+          file_format: 'xml' | 'zip' | 'pdf' | 'image' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
           reference_start: string | null
           reference_end: string | null
           status: 'review' | 'confirmed' | 'failed' | 'reversed'
@@ -32,7 +32,7 @@ export type Database = {
         Insert: {
           id?: string
           file_name: string
-          file_format: 'xml' | 'zip' | 'pdf' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
+          file_format: 'xml' | 'zip' | 'pdf' | 'image' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
           reference_start?: string | null
           reference_end?: string | null
           status?: 'review' | 'confirmed' | 'failed' | 'reversed'

@@ -274,6 +274,9 @@ export async function registerSupabaseMovement(input: MovementForm, idempotencyK
 
 function toMovementErrorMessage(message: string) {
   const normalized = message.toLowerCase()
+  if (normalized.includes('invalid_quantity') || normalized.includes('quantity_check')) return 'O lote contÃ©m uma quantidade invÃ¡lida para o estoque. Releia o print e confira as quantidades zeradas ou negativas.'
+  if (normalized.includes('relatorio repetido') || normalized.includes('relatÃ³rio repetido')) return 'O mesmo relatÃ³rio foi selecionado mais de uma vez neste lote. Remova a cÃ³pia repetida e tente novamente.'
+  if (normalized.includes('foreign key') || normalized.includes('column') || normalized.includes('does not exist')) return 'A estrutura do banco ainda nÃ£o estÃ¡ atualizada. Aplique todas as migrations pendentes do Supabase e tente novamente.'
   if (normalized.includes('not_authorized')) return 'Seu usuário não tem permissão para registrar movimentações.'
   if (normalized.includes('not_authenticated')) return 'Sua sessão expirou. Entre novamente para registrar a movimentação.'
   if (normalized.includes('insufficient_stock')) return 'A saída não pode ser maior que o saldo atual do produto.'

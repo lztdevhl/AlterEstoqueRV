@@ -67,7 +67,7 @@ export interface Movement {
 export interface ImportBatch {
   id: string
   fileName: string
-  fileFormat: 'xml' | 'zip' | 'pdf' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
+  fileFormat: 'xml' | 'zip' | 'pdf' | 'image' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json' | 'mixed'
   referenceStart: string
   referenceEnd: string
   status: 'review' | 'confirmed' | 'failed' | 'reversed'

@@ -1,8 +1,9 @@
 import * as XLSX from 'xlsx'
 import { unzipSync } from 'fflate'
 import { XMLParser } from 'fast-xml-parser'
+import { prepareOcrImage } from './ocrImage'
 
-export type DetectedImportFormat = 'xml' | 'zip' | 'pdf' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json'
+export type DetectedImportFormat = 'xml' | 'zip' | 'pdf' | 'image' | 'csv' | 'xlsx' | 'xls' | 'txt' | 'json'
 
 export interface ExtractedImportDocument {
   fileName: string
@@ -86,6 +87,25 @@ interface PdfMetadata {
   documentTotal: string
 }
 
+interface FilialStockProductRow {
+  product: string
+  previousStock: number
+  physicalExits: number
+  currentStock: number
+}
+
+interface FilialStockReport {
+  errors: string[]
+  branch: string
+  reportDate: string
+  previousTotal: number
+  physicalExitsTotal: number
+  entriesTotal: number
+  currentTotal: number
+  orderUnitsTotal: number
+  products: FilialStockProductRow[]
+}
+
 function normalizePdfText(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 }
@@ -122,6 +142,166 @@ function pdfQuantity(value: string): { value: number; unit: string } | null {
   const number = pdfNumber(match[1])
   if (number === null || number <= 0) return null
   return { value: number, unit: match[2] ?? '' }
+}
+
+function normalizeFilialReportText(value: string): string {
+  // Alguns PDFs exportados pelo sistema usam glifos de fonte como caracteres
+  // de controle. Removê-los deixa o texto comparável mesmo quando o acento
+  // original não está disponível na camada de texto.
+  return normalizePdfText(value.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ''))
+}
+
+function cleanFilialReportText(value: string): string {
+  return value
+    .replace(/\u0003\u0004/g, 'ção')
+    .replace(/\u0005/g, 'í')
+    .replace(/\u0006/g, 'é')
+    .replace(/\u0007/g, 'ó')
+    .replace(/relat\u0001rio/gi, 'relatório')
+    .replace(/p\u0001gina/gi, 'página')
+    .replace(/\u0001/g, '')
+    .replace(/\u0000/g, '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+}
+
+function parseFilialStockNumericRow(line: string): FilialStockProductRow | null {
+  const cleaned = cleanFilialReportText(line).replace(/\|?\)\s+(?=\d)/g, 'J ').replace(/\|/g, ' ').replace(/(?<=\s)[oO](?=\s|$)/g, '0')
+  let parts = splitPdfLine(cleaned)
+  if (parts.length < 4) {
+    const fallback = cleaned.match(/^(.*?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*$/)
+    if (fallback) parts = [fallback[1], fallback[2], fallback[3], fallback[4]]
+  }
+  if (parts.length < 4) return null
+  const tail = parts.slice(-3).map(pdfNumber)
+  if (tail.some((value) => value === null)) return null
+  const product = parts.slice(0, -3).join(' ').trim()
+  if (!product || normalizeFilialReportText(product).startsWith('total da filial')) return null
+  return {
+    product,
+    previousStock: tail[0] ?? 0,
+    physicalExits: tail[1] ?? 0,
+    currentStock: tail[2] ?? 0,
+  }
+}
+
+function parseFilialStockReport(lines: string[]): FilialStockReport | null {
+  const normalizedLines = lines.map(normalizeFilialReportText)
+  const fullText = normalizedLines.join('\n')
+  const tableHeader = normalizedLines.findIndex((line) => /produto.*saldo anterior.*baixas\s*f[i\s]*sicas.*saldo/i.test(line))
+  const looksLikeFilialStockReport = tableHeader >= 0
+  if (!looksLikeFilialStockReport) return null
+
+  const branch = lines.map(cleanFilialReportText).map((line) => line.match(/filial\s+(.+)$/i)?.[1]?.trim() ?? '').find(Boolean) ?? ''
+  const reportDate = pdfDate(lines.map(cleanFilialReportText).join('\n'))
+  const summaryHeaderIndex = normalizedLines.findIndex((line) => /estoque anterior.*baixas\s*f[i\s]*sicas.*entradas.*estoque atual/i.test(line))
+  const summary = summaryHeaderIndex >= 0 ? (normalizedLines[summaryHeaderIndex + 1] ?? '').split(/\s+/).map(pdfNumber) : []
+  const summaryValues = summary.length === 4 && summary.every((value) => value !== null) ? summary as number[] : [0, 0, 0, 0]
+
+  const productsStart = tableHeader
+  const productsEnd = normalizedLines.findIndex((line, index) => index > productsStart && /total da filial/i.test(line))
+  const products: FilialStockProductRow[] = []
+  const errors: string[] = []
+  if (productsStart >= 0) {
+    for (let index = productsStart + 1; index < (productsEnd > productsStart ? productsEnd : normalizedLines.length); index += 1) {
+      if (/^\d+\.\s|^(qtd|municipio|cliente)\b/.test(normalizedLines[index])) break
+      const row = parseFilialStockNumericRow(lines[index])
+      if (row) products.push(row)
+      else errors.push(`Linha não reconhecida: ${lines[index]}. Envie um print mais nítido.`)
+    }
+  }
+
+  const orderUnitsTotal = normalizedLines.map((line) => line.match(/^(\d+(?:[.,]\d+)?)\s+unidades\s+vendidas/i)?.[1] ?? '')
+    .map(pdfNumber).find((value): value is number => value !== null) ?? 0
+  if (!products.length) return null
+  if (productsEnd >= 0) {
+    const total = parseFilialStockNumericRow(lines[productsEnd].replace(/total da filial/i, 'Total'))
+    if (!total || total.previousStock !== products.reduce((sum, row) => sum + row.previousStock, 0)
+      || total.physicalExits !== products.reduce((sum, row) => sum + row.physicalExits, 0)
+      || total.currentStock !== products.reduce((sum, row) => sum + row.currentStock, 0)) {
+      errors.push('A soma dos produtos não confere com o total da tabela. Confira se o print está completo e legível.')
+    }
+  }
+  return {
+    errors,
+    branch,
+    reportDate,
+    previousTotal: summary.length === 4 ? summaryValues[0] : products.reduce((sum, row) => sum + row.previousStock, 0),
+    physicalExitsTotal: summary.length === 4 ? summaryValues[1] : products.reduce((sum, row) => sum + row.physicalExits, 0),
+    entriesTotal: summary.length === 4 ? summaryValues[2] : products.reduce((sum, row) => sum + row.currentStock - row.previousStock + row.physicalExits, 0),
+    currentTotal: summary.length === 4 ? summaryValues[3] : products.reduce((sum, row) => sum + row.currentStock, 0),
+    orderUnitsTotal,
+    products,
+  }
+}
+
+function buildFilialStockDocument(report: FilialStockReport, fileName: string, format: 'pdf' | 'image', extraWarning?: string): ExtractedImportDocument {
+  const tableKey = hashBytes(new TextEncoder().encode(JSON.stringify(report.products)))
+  const documentKey = `relatorio_estoque_filial:${report.branch || 'filial'}:${report.reportDate || tableKey}`
+  const errors: string[] = [...report.errors]
+  const inferredEntries = report.products.map((product) => product.currentStock - product.previousStock + product.physicalExits)
+  if (inferredEntries.some((value) => value < 0) || Math.abs(inferredEntries.reduce((a, b) => a + b, 0) - report.entriesTotal) > 0.001
+    || report.products.reduce((sum, row) => sum + row.physicalExits, 0) !== report.physicalExitsTotal) {
+    errors.push('Os saldos e movimentos lidos não conferem com os totais. Envie uma imagem mais nítida da tabela completa.')
+  }
+  const rows = report.products.flatMap((product, index) => [
+    { type: 'Ajuste', quantity: product.previousStock },
+    { type: 'Entrada', quantity: inferredEntries[index] },
+    { type: 'Saída', quantity: product.physicalExits },
+  ].filter((movement) => movement.type === 'Ajuste' || movement.quantity > 0).map((movement) => ({
+      ID: `${documentKey}:${normalizePdfText(product.product)}:${movement.type}`,
+      Produto: cleanFilialReportText(product.product),
+      Quantidade: String(movement.quantity).replace('.', ','),
+      Unidade: 'UN',
+      Documento: `Relatório de estoque${report.branch ? ` - ${report.branch}` : ''}`,
+      'Chave do documento': documentKey,
+      Data: report.reportDate,
+      'Tipo de documento': 'Relatório de estoque da filial',
+      Tipo: movement.type === 'Ajuste' ? 'Ajuste ao saldo anterior do relatório' : movement.type === 'Saída' ? 'Saída por baixa física' : 'Entrada física do relatório',
+      'Modo de importação': 'saldo_inicial_e_movimentos',
+      Situação: 'Confirmado no relatório',
+      'Saldo anterior do item': String(product.previousStock),
+      'Saldo do item': String(product.currentStock),
+      'Baixas físicas do item': String(product.physicalExits),
+      'Entradas da filial': String(report.entriesTotal),
+      'Estoque anterior da filial': String(report.previousTotal),
+      'Estoque atual da filial': String(report.currentTotal),
+      Cliente: '',
+      'Arquivo de origem': fileName,
+      'Formato detectado': format,
+    })))
+  const warnings = [
+    'O saldo anterior será conciliado com o cadastro antes das entradas e baixas. O resultado será o saldo do item mostrado no relatório, inclusive nos produtos sem saída.',
+    `Relatório de estoque da filial${report.branch ? ` ${report.branch}` : ''} detectado: ${report.physicalExitsTotal} baixa(s) física(s), ${report.entriesTotal} entrada(s) e estoque final de ${report.currentTotal} unidade(s).`,
+    report.entriesTotal > 0
+      ? `Entradas calculadas por produto: saldo final - saldo anterior + baixas físicas. Confira as quantidades antes de confirmar.`
+      : 'A seção de entradas foi lida e informa zero entradas no período.',
+  ]
+  if (report.orderUnitsTotal > 0) {
+    warnings.push(`A seção de pedidos informa ${report.orderUnitsTotal} unidade(s) vendida(s), mas o estoque registra ${report.physicalExitsTotal} baixa(s) física(s). Apenas baixas físicas alteram o estoque; os pedidos não foram lançados novamente.`)
+  }
+  if (extraWarning) warnings.unshift(extraWarning)
+  return {
+    fileName,
+    format,
+    rows,
+    warnings,
+    errors,
+    documentKey,
+    documentType: 'relatorio_estoque_filial',
+    documentLabel: 'Relatório de estoque da filial',
+    documentDate: report.reportDate,
+    documentStatus: 'Confirmado no relatório',
+    metadata: {
+      branch: report.branch,
+      previousTotal: String(report.previousTotal),
+      physicalExitsTotal: String(report.physicalExitsTotal),
+      entriesTotal: String(report.entriesTotal),
+      currentTotal: String(report.currentTotal),
+      orderUnitsTotal: String(report.orderUnitsTotal),
+      productCount: String(report.products.length),
+    },
+  }
 }
 
 function isPdfClassificationCode(value: string): boolean {
@@ -379,6 +559,8 @@ async function extractPdfText(bytes: Uint8Array, fileName: string): Promise<Extr
     const text = pages.join('\n')
     if (!text.trim()) return { fileName, format: 'pdf', rows: [], warnings: [], errors: ['PDF sem texto selecionável. OCR não está habilitado nesta instalação; envie o XML, CSV/XLSX ou um PDF com texto.'] }
     const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    const filialReport = parseFilialStockReport(lines)
+    if (filialReport) return buildFilialStockDocument(filialReport, fileName, 'pdf')
     const metadata = pdfDocumentMetadata(lines, fileName)
     let rows = lines.flatMap((line, index) => {
       const row = parsePdfProductLine(line, metadata, fileName, index)
@@ -409,10 +591,52 @@ async function extractPdfText(bytes: Uint8Array, fileName: string): Promise<Extr
   }
 }
 
+export function parseImageReportText(text: string, fileName: string): ExtractedImportDocument {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const filialReport = parseFilialStockReport(lines)
+  if (filialReport) return buildFilialStockDocument(filialReport, fileName, 'image', 'Confira os nomes e as quantidades reconhecidos na imagem.')
+  const rows: Record<string, unknown>[] = []
+  let columns: string[] = []
+  for (const line of lines) {
+    const normalized = normalizePdfText(line)
+    if (/produto/.test(normalized) && /entradas?/.test(normalized) && /saidas?/.test(normalized)) {
+      columns = normalized.match(/entradas?|saidas?/g) ?? []
+      continue
+    }
+    if (!columns.length || /^total|^\d+\.\s/.test(normalized)) { columns = []; continue }
+    const match = line.replace(/\|/g, ' ').match(/^(.*?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*$/)
+    if (!match) continue
+    columns.forEach((column, index) => {
+      const quantity = pdfNumber(match[index + 2])
+      if (quantity && quantity > 0) rows.push({ Produto: match[1].trim(), Quantidade: quantity, Tipo: column.startsWith('entrada') ? 'Entrada' : 'Saída', Data: pdfDate(text), Unidade: 'UN', Documento: fileName })
+    })
+  }
+  return { fileName, format: 'image', rows, warnings: ['Confira os nomes e as quantidades reconhecidos na imagem.'], errors: rows.length ? [] : ['Nenhuma movimentação reconhecida. Inclua os cabeçalhos e as quantidades de entrada e saída no print.'] }
+}
+
+async function extractImageText(bytes: Uint8Array, fileName: string): Promise<ExtractedImportDocument> {
+  try {
+    const { createWorker } = await import('tesseract.js')
+    const worker = await createWorker('por', 1, { logger: () => undefined })
+    try {
+      await worker.setParameters({ preserve_interword_spaces: '1', tessedit_pageseg_mode: '6' as import('tesseract.js').PSM })
+      const result = await worker.recognize(await prepareOcrImage(new Blob([new Uint8Array(bytes)])))
+      const text = result.data.text.trim()
+      if (!text) return { fileName, format: 'image', rows: [], warnings: [], errors: ['Não foi possível reconhecer texto na imagem. Envie um print com maior resolução e boa iluminação.'] }
+      return parseImageReportText(text, fileName)
+    } finally {
+      await worker.terminate().catch(() => undefined)
+    }
+  } catch (error) {
+    return { fileName, format: 'image', rows: [], warnings: [], errors: [error instanceof Error ? `Não foi possível ler a imagem: ${error.message}` : 'Não foi possível ler a imagem.'] }
+  }
+}
+
 function detectFormat(fileName: string, bytes: Uint8Array): DetectedImportFormat | null {
   const lower = fileName.toLowerCase()
   const signature = bytes.length >= 4 ? String.fromCharCode(...bytes.slice(0, 4)) : ''
   if (signature === '%PDF') return 'pdf'
+  if (signature === '\x89PNG' || signature === 'JFIF' || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp') || lower.endsWith('.bmp')) return 'image'
   if (signature.startsWith('PK')) return lower.endsWith('.xlsx') ? 'xlsx' : 'zip'
   const text = bytesToText(bytes).trimStart()
   if (text.startsWith('<?xml') || text.startsWith('<')) return 'xml'
@@ -443,6 +667,7 @@ async function extractOne(fileName: string, bytes: Uint8Array, forcedFormat?: De
   }
   if (format === 'xml') return [parseNfeXmlFast(bytesToText(bytes), fileName)]
   if (format === 'pdf') return [await extractPdfText(bytes, fileName)]
+  if (format === 'image') return [await extractImageText(bytes, fileName)]
   if (format === 'json') {
     try {
       const value: unknown = JSON.parse(bytesToText(bytes))

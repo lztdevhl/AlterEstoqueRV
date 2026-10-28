@@ -6,4 +6,5 @@ dist
 *.local
 .vercel
 supabase/.temp
+*.traineddata
 

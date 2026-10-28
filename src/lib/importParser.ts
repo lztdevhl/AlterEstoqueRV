@@ -105,6 +105,7 @@ export const DEFAULT_OPERATION_RULES: OperationRule[] = [
   { label: 'Entrada por devolução', type: 'entrada', aliases: ['devolucao', 'devolução', 'retorno'] },
   { label: 'Saída por venda', type: 'saida', aliases: ['saida', 'saída', 'saida venda', 'saída venda', 'venda', 'vendido'] },
   { label: 'Saída por transferência', type: 'saida', aliases: ['transferencia', 'transferência', 'remessa'] },
+  { label: 'Saída por baixa física', type: 'saida', aliases: ['baixa', 'baixas', 'baixa fisica', 'baixas fisicas', 'saida fisica', 'saida por baixa'] },
   { label: 'Ajuste de inventário', type: 'ajuste', aliases: ['ajuste', 'inventario', 'inventário', 'contagem'] },
   { label: 'Cancelamento / estorno', type: 'ignorar', aliases: ['cancelamento', 'cancelado', 'estorno', 'estornado'] },
 ]
@@ -218,15 +219,41 @@ function findHeaderMap(headers: string[]): ImportColumnMap {
   return map
 }
 
+function productWords(text: string): string[] {
+  return normalizeImportText(text).replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((word) => word && !['de', 'do', 'da', 'para', 'em'].includes(word))
+}
+
+function similarWord(a: string, b: string): boolean {
+  if (a === b) return true
+  if (Math.min(a.length, b.length) < 5 || /\d/.test(a + b) || Math.abs(a.length - b.length) > 1) return false
+  let i = 0; let j = 0; let edits = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue }
+    if (++edits > 1) return false
+    if (a.length >= b.length) i++
+    if (b.length >= a.length) j++
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1
+}
+
 function scoreProduct(product: Product, text: string): number {
-  const normalized = normalizeImportText(text)
-  const productName = normalizeImportText(product.name)
+  const words = productWords(text)
+  const target = productWords(product.name)
+  const normalized = words.join(' ')
+  const productName = target.join(' ')
   if (!normalized || !productName) return 0
   if (productName === normalized) return 100
-  if (productName.includes(normalized) || normalized.includes(productName)) return 55
-  const words = new Set(normalized.split(' '))
-  const matches = productName.split(' ').filter((word) => word.length > 2 && words.has(word)).length
-  return matches ? Math.round((matches / Math.max(words.size, productName.split(' ').length)) * 45) : 0
+  const numbers = words.filter((word) => /^\d+$/.test(word))
+  const targetNumbers = target.filter((word) => /^\d+$/.test(word))
+  if (numbers.length && targetNumbers.length && numbers.join() !== targetNumbers.join()) return 0
+  if (words.includes('sem') && target.includes('com') || words.includes('com') && target.includes('sem')) return 0
+  const remaining = [...target]
+  let matches = 0
+  for (const word of words) {
+    const index = remaining.findIndex((candidate) => similarWord(word, candidate))
+    if (index >= 0) { matches++; remaining.splice(index, 1) }
+  }
+  return Math.round(100 * 2 * matches / (words.length + target.length))
 }
 
 function classifyOperation(value: string, rules: OperationRule[]): { type: MovementType | null; ignored: boolean } {
@@ -246,6 +273,7 @@ export function matchImportProduct(
   products: Product[],
   mappings: ProductExternalMapping[] = [],
 ): Pick<ImportRow, 'productId' | 'productMatch' | 'suggestedProductIds'> {
+  products = products.filter((product) => product.active)
   const code = compactIdentifier(values.externalCode)
   const barcode = compactIdentifier(values.barcode)
   const name = normalizeImportText(values.productName)
@@ -260,7 +288,7 @@ export function matchImportProduct(
   if (nameMapping && products.some((product) => product.id === nameMapping.productId)) return { productId: nameMapping.productId, productMatch: 'mapping', suggestedProductIds: [] }
   const nameMatches = name ? products.filter((product) => normalizeImportText(product.name) === name) : []
   if (nameMatches.length === 1) return { productId: nameMatches[0].id, productMatch: 'name', suggestedProductIds: [] }
-  const candidates = products.map((product) => ({ product, score: scoreProduct(product, values.productName) })).filter((item) => item.score >= 35).sort((a, b) => b.score - a.score)
+  const candidates = products.map((product) => ({ product, score: scoreProduct(product, values.productName) })).filter((item) => item.score >= 60).sort((a, b) => b.score - a.score)
   if (candidates.length && candidates[0].score > (candidates[1]?.score ?? 0) + 10) return { productId: candidates[0].product.id, productMatch: 'suggestion', suggestedProductIds: candidates.slice(0, 3).map((item) => item.product.id) }
   return { productId: '', productMatch: nameMatches.length > 1 || candidates.length > 1 ? 'ambiguous' : 'none', suggestedProductIds: [...nameMatches, ...candidates.map((item) => item.product)].slice(0, 3).map((product) => product.id) }
 }
@@ -272,7 +300,7 @@ export function parseReportRows(
   rules: OperationRule[] = DEFAULT_OPERATION_RULES,
   fileFingerprint = 'report',
 ): ImportParseResult {
-  const headers = rawRows.length ? Object.keys(rawRows[0]) : []
+  const headers = [...new Set(rawRows.flatMap((row) => Object.keys(row)))]
   const detectedMap = findHeaderMap(headers)
   const warnings: string[] = []
   if (!detectedMap.quantity) warnings.push('Não foi possível identificar automaticamente a coluna de quantidade.')
@@ -304,7 +332,7 @@ export function parseReportRows(
     const hasStableLineId = Boolean(cell(raw, detectedMap.lineId))
     if (!hasStableLineId) warningsForRow.push('O relatório não trouxe identificador estável da operação; a deduplicação entre arquivos diferentes exige revisão.')
     if (!productMatch.productId) errors.push(productMatch.productMatch === 'ambiguous' ? 'Produto com correspondência ambígua.' : 'Produto não encontrado no cadastro.')
-    if (!quantity || quantity <= 0) errors.push('Quantidade inválida ou ausente.')
+    if (quantity === null || (operation.type === 'ajuste' ? quantity < 0 : quantity <= 0)) errors.push('Quantidade inválida ou ausente.')
     if (!date) errors.push('Data da operação inválida ou ausente.')
     if (!operation.type && !operation.ignored) errors.push('Tipo de operação pendente de classificação.')
     if (operation.ignored) warningsForRow.push('Registro financeiro/cancelamento não altera o estoque e será ignorado.')
@@ -364,7 +392,9 @@ export async function readReportFile(file: File): Promise<{ rows: Record<string,
 export function calculateImportProjection(rows: ImportRow[], products: Product[]): ImportRow[] {
   const balances = new Map(products.map((product) => [product.id, product.quantity]))
   return [...rows].sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.rowNumber - b.rowNumber).map((row) => {
-    if (!row.productId || !row.type || !row.quantity || row.status !== 'valid') return row
+    const errorsWithoutProjection = row.errors.filter((error) => !['A operação deixará o estoque negativo.', 'Unidade de medida incompatível com o produto.'].includes(error))
+    if (errorsWithoutProjection.length !== row.errors.length) row = { ...row, errors: errorsWithoutProjection, status: errorsWithoutProjection.length ? 'pending' : 'valid', previousStock: undefined, projectedStock: undefined }
+    if (!row.productId || !row.type || row.quantity === null || row.status !== 'valid') return row
     const previousStock = balances.get(row.productId) ?? 0
     const product = products.find((item) => item.id === row.productId)
     const errors = [...row.errors]

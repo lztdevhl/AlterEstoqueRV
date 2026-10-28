@@ -2,11 +2,40 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { zipSync, strToU8 } from 'fflate'
 import * as XLSX from 'xlsx'
-import { readUniversalFiles } from './importFormats'
+import { parseImageReportText, readUniversalFiles } from './importFormats'
+import { parseReportRows } from './importParser'
+import type { Product } from './types'
 
 const asFile = (content: string | Uint8Array | ArrayBuffer, name: string) => new File([typeof content === 'string' ? content : content instanceof ArrayBuffer ? content : new Uint8Array(content)], name)
 
 describe('adaptadores de formatos de importação', () => {
+  it('reconhece OCR correto de tabela recortada e associa nomes em outra ordem', () => {
+    const doc = parseImageReportText('27/10/2026\nProduto Saldo anterior Baixas físicas Saldo do item\nHidramax 1300 2 2 0\nBanda lateral protecocho 5 2 3\nTOTAL DA FILIAL 7 4 3', 'print.png')
+    const products = ['HIDRAMAX 1300', 'PROTECOCHO BANDA (LATERAL)'].map((name, index) => ({ id: String(index), name, sku: '', active: true } as Product))
+    const parsed = parseReportRows(doc.rows, products)
+    expect(doc.errors).toEqual([])
+    expect(parsed.rows.map((row) => [row.productId, row.quantity, row.type, row.status])).toEqual([['0', 2, 'ajuste', 'valid'], ['0', 2, 'saida', 'valid'], ['1', 5, 'ajuste', 'valid'], ['1', 2, 'saida', 'valid']])
+  })
+
+  it('calcula entradas pelos saldos e rejeita totais inconsistentes', () => {
+    const text = 'Produto Saldo anterior Baixas físicas Saldo do item\nMulticocho 250 5 2 7'
+    expect(parseImageReportText(text, 'print.png').rows.map((row) => [row.Tipo, row.Quantidade])).toEqual([['Ajuste ao saldo anterior do relatório', '5'], ['Entrada física do relatório', '4'], ['Saída por baixa física', '2']])
+    const inconsistent = 'Estoque anterior Baixas físicas Entradas Estoque atual\n5 2 0 3\n' + text
+    expect(parseImageReportText(inconsistent, 'print.png').errors.length).toBeGreaterThan(0)
+  })
+
+  it('lê o resultado real do OCR que confunde zero com a letra o', () => {
+    const text = 'Atualização em 27/10/2026\nProduto                 Saldo anterior — Baixas físicas — Saldo do item\nHidramax 1300                 2                2                 o\nBanda lateral protecocho       5                 2                 3\nTOTAL DA FILIAL                  7                    4                    3'
+    const doc = parseImageReportText(text, 'print.png')
+    expect(doc.errors).toEqual([])
+    expect(doc.rows).toHaveLength(4)
+    expect(parseImageReportText(text.replace(/Hidramax[^\n]*\n/, ''), 'print.png').errors.length).toBeGreaterThan(0)
+  })
+
+  it('lê colunas de entrada e saída e não interpreta texto qualquer como produto', () => {
+    expect(parseImageReportText('Produto Entradas Saídas\nMULTICOCHO 200 5 2', 'print.png').rows).toHaveLength(2)
+    expect(parseImageReportText('Erro do sistema\nNenhum produto encontrado', 'print.png').rows).toEqual([])
+  })
   it('extrai itens individuais de XML fiscal', async () => {
     const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe35202600000000000000550010000000011000000010"><ide><nNF>10</nNF><serie>1</serie><dhEmi>2026-10-15T10:00:00-04:00</dhEmi><natOp>Compra para estoque</natOp></ide><det nItem="1"><prod><cProd>PD00001</cProd><xProd>Protecocho 200</xProd><qCom>3.0000</qCom><uCom>UN</uCom><CFOP>1102</CFOP></prod></det></infNFe></NFe></nfeProc>`
     const result = await readUniversalFiles([asFile(xml, 'nota.xml')])
@@ -114,5 +143,19 @@ describe('adaptadores de formatos de importação', () => {
     expect(row.Produto).toBe('HIDRAMAX 1300')
     expect(row.Quantidade).toBe('1')
     expect(row.CFOP).toBe('6102')
+  })
+
+  it('processa o relatório semanal incluindo os saldos anteriores e as baixas físicas', async () => {
+    const bytes = readFileSync(new URL('../../ex/Relatorio Estoque da semana do dia 19-10.pdf', import.meta.url))
+    const result = await readUniversalFiles([asFile(bytes, 'Relatorio Estoque da semana do dia 19-10.pdf')])
+    const document = result.documents[0]
+
+    expect(document.documentType).toBe('relatorio_estoque_filial')
+    expect(document.metadata).toMatchObject({ branch: 'RIO VERDE GO', entriesTotal: '0', physicalExitsTotal: '9', currentTotal: '62', orderUnitsTotal: '37' })
+    expect(result.rows).toHaveLength(15)
+    expect(result.rows.map((row) => row.Produto)).toEqual(expect.arrayContaining(['Hidramax 1300', 'Multicocho 250', 'Banda lateral protecocho', 'Telhado protecocho']))
+    expect(result.rows.filter((row) => row.Tipo === 'Saída por baixa física').reduce((total, row) => total + Number(row.Quantidade), 0)).toBe(9)
+    expect(result.rows.filter((row) => String(row.Tipo).startsWith('Ajuste')).reduce((total, row) => total + Number(row.Quantidade), 0)).toBe(71)
+    expect(result.warnings.join(' ')).toContain('37')
   })
 })
